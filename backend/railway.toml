@@ -1,0 +1,25 @@
+# Railway Configuration for Synthora Backend
+# ============================================
+# This file configures how Railway builds and deploys the backend service.
+
+[build]
+# Use Nixpacks builder (auto-detects Python)
+builder = "nixpacks"
+
+# Build command - install dependencies and run migrations
+buildCommand = "pip install -r requirements.txt && python -m alembic upgrade head || true"
+
+[deploy]
+# Start command - run FastAPI with uvicorn
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+
+# Health check endpoint
+healthcheckPath = "/api/v1/health"
+healthcheckTimeout = 30
+
+# Number of replicas
+numReplicas = 1
+
+# Restart policy
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

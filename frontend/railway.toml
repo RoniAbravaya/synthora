@@ -1,0 +1,26 @@
+# Railway Configuration for Synthora Frontend
+# ============================================
+# This file configures how Railway builds and deploys the frontend service.
+
+[build]
+# Use Nixpacks builder (auto-detects Node.js)
+builder = "nixpacks"
+
+# Build command - install and build
+buildCommand = "npm ci && npm run build"
+
+[deploy]
+# Serve static files from dist directory
+# Railway will auto-detect this is a static site
+startCommand = "npx serve dist -s -l $PORT"
+
+# Health check
+healthcheckPath = "/"
+healthcheckTimeout = 30
+
+# Number of replicas
+numReplicas = 1
+
+# Restart policy
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

@@ -1,0 +1,25 @@
+# Railway Configuration for Synthora Worker
+# ==========================================
+# This file configures the background worker service.
+# Deploy this as a separate service in Railway pointing to the same repo.
+
+[build]
+# Use Nixpacks builder (auto-detects Python)
+builder = "nixpacks"
+
+# Build command - install dependencies
+buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+# Start command - run RQ worker
+startCommand = "python -m rq.cli worker --url $REDIS_URL synthora-default synthora-video synthora-analytics synthora-posts synthora-cleanup"
+
+# No health check for worker (it's not a web service)
+# healthcheckPath = ""
+
+# Number of replicas
+numReplicas = 1
+
+# Restart policy
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
