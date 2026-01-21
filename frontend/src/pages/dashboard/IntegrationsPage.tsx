@@ -383,9 +383,9 @@ export default function IntegrationsPage() {
   const validateMutation = useValidateIntegration()
   const toggleMutation = useToggleIntegration()
 
-  const integrations = integrationsData?.integrations || []
-  const availableIntegrations = availableData?.integrations || []
-  const categories = availableData?.categories || []
+  const integrations = Array.isArray(integrationsData?.integrations) ? integrationsData.integrations : []
+  const availableIntegrations = Array.isArray(availableData?.integrations) ? availableData.integrations : []
+  const categories = Array.isArray(availableData?.categories) ? availableData.categories : []
 
   const existingProviders = integrations.map((i) => i.provider)
 
@@ -396,7 +396,8 @@ export default function IntegrationsPage() {
       : integrations.filter((i) => i.category === activeTab)
 
   // Calculate readiness progress
-  const configuredCategories = readinessData?.configured_categories || []
+  const configuredCategories = Array.isArray(readinessData?.configured_categories) ? readinessData.configured_categories : []
+  const missingCategories = Array.isArray(readinessData?.missing_categories) ? readinessData.missing_categories : []
   const requiredCategories = categories.filter((c) => c.required_count > 0)
   const readinessProgress =
     requiredCategories.length > 0
@@ -451,7 +452,7 @@ export default function IntegrationsPage() {
             <p className="text-sm text-muted-foreground">
               {readinessData?.ready
                 ? "All required integrations are configured."
-                : `Configure integrations for: ${readinessData?.missing_categories
+                : `Configure integrations for: ${missingCategories
                     .map((c) => categoryNames[c])
                     .join(", ")}`}
             </p>
