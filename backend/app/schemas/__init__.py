@@ -54,10 +54,10 @@ from app.schemas.integration import (
 from app.schemas.template import (
     VideoStructureConfig,
     VisualStyleConfig,
-    TextCaptionsConfig,
     AudioConfig,
     ScriptPromptConfig,
     PlatformOptimizationConfig,
+    TemplateConfigSchema,
     TemplateCreate,
     TemplateUpdate,
     TemplateResponse,
@@ -215,10 +215,10 @@ __all__ = [
     # Template
     "VideoStructureConfig",
     "VisualStyleConfig",
-    "TextCaptionsConfig",
     "AudioConfig",
     "ScriptPromptConfig",
     "PlatformOptimizationConfig",
+    "TemplateConfigSchema",
     "TemplateCreate",
     "TemplateUpdate",
     "TemplateResponse",
