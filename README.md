@@ -1,30 +1,47 @@
 ﻿# Synthora
 
-**AI-Powered Video Generator Platform**
+<p align="center">
+  <img src="frontend/public/logo.svg" alt="Synthora Logo" width="300" />
+</p>
+
+<p align="center">
+  <strong>AI-Powered Video Generator Platform</strong>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#tech-stack">Tech Stack</a> •
+  <a href="#getting-started">Getting Started</a> •
+  <a href="#deployment">Deployment</a> •
+  <a href="#documentation">Documentation</a>
+</p>
+
+---
 
 Synthora is a SaaS web application that enables users to generate viral videos using multiple AI integrations, post them to social media platforms, and analyze performance with AI-powered suggestions for improvement.
 
-## 🚀 Features
+## ✨ Features
 
-- **AI Video Generation** - Create videos using OpenAI, ElevenLabs, Pexels, and various video AI services
-- **Multi-Platform Posting** - Post to YouTube, TikTok, Instagram, and Facebook
-- **Smart Scheduling** - Schedule posts for optimal engagement times (Premium)
-- **Analytics Dashboard** - Track performance across all platforms
-- **AI Suggestions** - Get AI-powered recommendations to improve your content (Premium)
-- **Template System** - Use and create customizable video templates
+- **🎬 AI Video Generation** - Create videos using OpenAI, ElevenLabs, Pexels, and various video AI services
+- **📱 Multi-Platform Posting** - Post to YouTube, TikTok, Instagram, and Facebook
+- **📅 Smart Scheduling** - Schedule posts for optimal engagement times (Premium)
+- **📊 Analytics Dashboard** - Track performance across all platforms
+- **🤖 AI Suggestions** - Get AI-powered recommendations to improve your content (Premium)
+- **📝 Template System** - Use and create customizable video templates
 
 ## 🛠️ Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| Backend | Python 3.11+ / FastAPI |
-| Frontend | React 18 (Vite) / shadcn/ui / Tailwind CSS |
-| Database | PostgreSQL |
-| Queue | RQ (Redis Queue) / Upstash Redis |
-| Storage | Google Cloud Storage |
-| Auth | Firebase Authentication |
-| Payments | Stripe |
-| Deployment | Railway |
+| **Backend** | Python 3.11+ / FastAPI |
+| **Frontend** | React 18 / TypeScript / Vite |
+| **UI** | shadcn/ui / Tailwind CSS |
+| **Database** | PostgreSQL |
+| **Queue** | RQ (Redis Queue) / Upstash Redis |
+| **Storage** | Google Cloud Storage |
+| **Auth** | Firebase Authentication |
+| **Payments** | Stripe |
+| **Deployment** | Railway |
 
 ## 📁 Project Structure
 
@@ -32,19 +49,18 @@ Synthora is a SaaS web application that enables users to generate viral videos u
 synthora/
 ├── backend/                    # FastAPI application
 │   ├── app/
-│   │   ├── api/               # API routes
-│   │   ├── core/              # Config, security, dependencies
+│   │   ├── api/               # API routes (v1 endpoints)
+│   │   ├── core/              # Config, security, auth
 │   │   ├── models/            # SQLAlchemy models
 │   │   ├── schemas/           # Pydantic schemas
 │   │   ├── services/          # Business logic
 │   │   ├── integrations/      # External API integrations
-│   │   ├── workers/           # RQ job definitions
-│   │   └── utils/             # Helpers & utilities
+│   │   └── workers/           # Background job definitions
 │   ├── alembic/               # Database migrations
 │   ├── tests/                 # Backend tests
 │   └── requirements.txt
 │
-├── frontend/                   # React application
+├── frontend/                   # React SPA
 │   ├── src/
 │   │   ├── components/        # UI components
 │   │   ├── pages/             # Page components
@@ -58,7 +74,11 @@ synthora/
 │   ├── ai-overview.md         # Project overview
 │   └── todo-synthora.md       # Implementation checklist
 │
-└── .github/workflows/         # CI/CD
+├── docs/                      # Documentation
+│   ├── SETUP_GUIDE.md         # External services setup
+│   └── DEPLOYMENT.md          # Railway deployment guide
+│
+└── .github/workflows/         # CI/CD pipelines
 ```
 
 ## 🚀 Getting Started
@@ -67,13 +87,10 @@ synthora/
 
 - Python 3.11+
 - Node.js 18+
-- PostgreSQL 15+
+- PostgreSQL 15+ (or use SQLite for development)
 - Redis (or Upstash account)
-- Firebase project
-- Stripe account
-- Google Cloud Storage bucket
 
-### Environment Setup
+### Quick Start (Local Development)
 
 1. **Clone the repository**
    ```bash
@@ -83,77 +100,42 @@ synthora/
 
 2. **Set up environment variables**
    ```bash
-   # Copy the environment template
    cp .env.example .env
-   
-   # Edit .env with your actual values
+   # Edit .env with your values
    ```
 
 3. **Backend Setup**
    ```bash
    cd backend
-   
-   # Create virtual environment
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   
-   # Install dependencies
+   source venv/bin/activate  # Windows: venv\Scripts\activate
    pip install -r requirements.txt
    
-   # Run database migrations
+   # Run migrations (requires DATABASE_URL)
    alembic upgrade head
    
-   # Start the backend server
+   # Start server
    uvicorn app.main:app --reload
    ```
 
 4. **Frontend Setup**
    ```bash
    cd frontend
-   
-   # Install dependencies
    npm install
-   
-   # Start the development server
    npm run dev
    ```
 
-5. **Worker Setup** (separate terminal)
+5. **Worker Setup** (optional, for background jobs)
    ```bash
    cd backend
-   source venv/bin/activate
-   
-   # Start the RQ worker
    rq worker --url $REDIS_URL
    ```
 
-## 🚂 Railway Deployment
+### Access the Application
 
-This project is configured for easy deployment on Railway:
-
-1. **Connect GitHub Repository**
-   - Go to Railway dashboard
-   - Create new project from GitHub repo
-
-2. **Add Services**
-   - Backend service (auto-detected from `/backend`)
-   - Frontend service (auto-detected from `/frontend`)
-   - Worker service (same codebase, different start command)
-   - PostgreSQL plugin
-
-3. **Configure Environment Variables**
-   - Add all variables from `.env.example` to Railway dashboard
-   - Railway automatically provides `DATABASE_URL` and `PORT`
-
-4. **Deploy**
-   - Railway auto-deploys on push to `main` branch
-
-## 📖 Documentation
-
-- [Project Overview](./ai-planning/ai-overview.md)
-- [Implementation Checklist](./ai-planning/todo-synthora.md)
-- [Setup Guide](./docs/SETUP_GUIDE.md)
-- [API Documentation](http://localhost:8000/docs) (when running locally)
+- **Frontend**: http://localhost:5173
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
 
 ## 🔐 User Roles
 
@@ -166,11 +148,13 @@ This project is configured for easy deployment on Railway:
 ## 🔌 Supported Integrations
 
 ### AI Services
-- **Script Generation**: OpenAI (ChatGPT)
-- **Voice Generation**: ElevenLabs
-- **Stock Media**: Pexels, Unsplash
-- **Video AI**: Google Veo 3, OpenAI Sora, Runway Gen-4, ImagineArt, PixVerse, Seedance AI, Wan2.6, Hailuo AI, Luma Dream Machine, LTX-2
-- **Video Assembly**: FFmpeg, Creatomate, Shotstack, Remotion, Editframe
+| Category | Providers |
+|----------|-----------|
+| **Script Generation** | OpenAI (GPT-4) |
+| **Voice Generation** | ElevenLabs |
+| **Stock Media** | Pexels, Unsplash |
+| **Video AI** | Google Veo 3, OpenAI Sora, Runway Gen-4, Luma Dream Machine, and more |
+| **Video Assembly** | FFmpeg, Creatomate, Shotstack |
 
 ### Social Platforms
 - YouTube
@@ -188,14 +172,38 @@ python -m pytest tests/unit -v
 # Frontend tests
 cd frontend
 npm run test:run
+
+# With coverage
+npm run test:coverage
 ```
 
-## 📊 Test Results
+### Test Results
 
 | Category | Tests | Status |
 |----------|-------|--------|
 | Backend Unit Tests | 70 | ✅ Passing |
 | Frontend Tests | 44 | ✅ Passing |
+
+## 🚂 Deployment
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed Railway deployment instructions.
+
+### Quick Deploy to Railway
+
+1. Fork this repository
+2. Create a new project on [Railway](https://railway.app)
+3. Add PostgreSQL database
+4. Deploy backend, frontend, and worker services
+5. Configure environment variables
+6. Set up Stripe webhook
+
+## 📖 Documentation
+
+- [Project Overview](ai-planning/ai-overview.md) - Architecture and design decisions
+- [Implementation Checklist](ai-planning/todo-synthora.md) - Development progress
+- [Setup Guide](docs/SETUP_GUIDE.md) - External services configuration
+- [Deployment Guide](docs/DEPLOYMENT.md) - Railway deployment instructions
+- [API Documentation](http://localhost:8000/docs) - OpenAPI/Swagger (when running locally)
 
 ## 🤝 Contributing
 
@@ -211,12 +219,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- [FastAPI](https://fastapi.tiangolo.com/)
-- [React](https://react.dev/)
-- [shadcn/ui](https://ui.shadcn.com/)
-- [Railway](https://railway.app/)
-- All the amazing AI service providers
+- [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
+- [React](https://react.dev/) - UI library
+- [shadcn/ui](https://ui.shadcn.com/) - Beautiful UI components
+- [Tailwind CSS](https://tailwindcss.com/) - Utility-first CSS
+- [Railway](https://railway.app/) - Deployment platform
 
 ---
 
-**Built with ❤️ by the Synthora Team**
+<p align="center">
+  <strong>Built with ❤️ by the Synthora Team</strong>
+</p>

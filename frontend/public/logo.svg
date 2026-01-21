@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50">
+  <defs>
+    <linearGradient id="synthora-logo-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0ea5e9"/>
+      <stop offset="50%" style="stop-color:#8b5cf6"/>
+      <stop offset="100%" style="stop-color:#d946ef"/>
+    </linearGradient>
+  </defs>
+  <!-- Icon -->
+  <g transform="translate(5, 5)">
+    <circle cx="20" cy="20" r="18" fill="none" stroke="url(#synthora-logo-gradient)" stroke-width="2"/>
+    <path d="M14 12 Q20 10 26 14 Q30 18 26 22 L14 22 Q10 22 10 26 Q10 30 14 30 Q20 32 26 28" 
+          fill="none" stroke="url(#synthora-logo-gradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="12" cy="14" r="2" fill="#06b6d4"/>
+    <circle cx="28" cy="26" r="2" fill="#d946ef"/>
+  </g>
+  <!-- Text -->
+  <text x="55" y="35" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="700" fill="url(#synthora-logo-gradient)">
+    Synthora
+  </text>
+</svg>

@@ -74,10 +74,33 @@ async def lifespan(app: FastAPI):
 # Create FastAPI application
 app = FastAPI(
     title=settings.APP_NAME,
-    description="AI-Powered Video Generator Platform - Generate viral videos using multiple AI integrations",
+    description="""
+## Synthora API
+
+AI-Powered Video Generator Platform - Generate viral videos using multiple AI integrations.
+
+### Features
+- 🎬 **Video Generation** - Create videos with AI-powered scripts, voiceovers, and visuals
+- 📱 **Multi-Platform Posting** - Post to YouTube, TikTok, Instagram, and Facebook
+- 📊 **Analytics** - Track performance across all platforms
+- 🤖 **AI Suggestions** - Get recommendations to improve content (Premium)
+
+### Authentication
+All endpoints (except `/health` and `/auth/setup-status`) require Firebase Authentication.
+Include the Firebase ID token in the `Authorization` header:
+```
+Authorization: Bearer <firebase-id-token>
+```
+
+### Rate Limiting
+- Free users: 100 requests/minute
+- Premium users: 500 requests/minute
+- Admin users: Unlimited
+    """,
     version="1.0.0",
-    docs_url="/docs" if settings.DEBUG else None,  # Disable docs in production
-    redoc_url="/redoc" if settings.DEBUG else None,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
     openapi_url="/openapi.json" if settings.DEBUG else None,
     lifespan=lifespan,
 )

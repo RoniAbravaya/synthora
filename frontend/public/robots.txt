@@ -1,0 +1,14 @@
+# Synthora Robots.txt
+# https://synthora.app
+
+User-agent: *
+Allow: /
+
+# Disallow dashboard and auth pages from indexing
+Disallow: /dashboard/
+Disallow: /auth/
+Disallow: /admin/
+Disallow: /api/
+
+# Sitemap
+Sitemap: https://synthora.app/sitemap.xml
