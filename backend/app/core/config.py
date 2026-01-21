@@ -45,37 +45,55 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Database (PostgreSQL)
     # -------------------------------------------------------------------------
-    DATABASE_URL: str = Field(..., description="PostgreSQL connection URL")
+    DATABASE_URL: str = Field(
+        default="sqlite:///./synthora.db",
+        description="PostgreSQL connection URL (or SQLite for development)"
+    )
     DB_ENCRYPTION_KEY: Optional[str] = Field(default=None, description="Database encryption key for pgcrypto")
     
     # -------------------------------------------------------------------------
-    # Redis (Upstash)
+    # Redis (Upstash) - Optional for initial deployment
     # -------------------------------------------------------------------------
-    REDIS_URL: str = Field(..., description="Redis connection URL")
+    REDIS_URL: Optional[str] = Field(
+        default=None,
+        description="Redis connection URL (optional - background jobs disabled without it)"
+    )
     
     # -------------------------------------------------------------------------
-    # Firebase Authentication
+    # Firebase Authentication - Required for auth but has defaults for startup
     # -------------------------------------------------------------------------
-    FIREBASE_PROJECT_ID: str = Field(..., description="Firebase project ID")
-    FIREBASE_WEB_API_KEY: str = Field(..., description="Firebase Web API key")
+    FIREBASE_PROJECT_ID: str = Field(
+        default="placeholder",
+        description="Firebase project ID"
+    )
+    FIREBASE_WEB_API_KEY: str = Field(
+        default="placeholder",
+        description="Firebase Web API key"
+    )
     FIREBASE_AUTH_DOMAIN: Optional[str] = Field(default=None, description="Firebase auth domain")
     FIREBASE_CREDENTIALS_PATH: Optional[str] = Field(default=None, description="Path to service account JSON file")
     FIREBASE_CREDENTIALS_JSON: Optional[str] = Field(default=None, description="Service account JSON as string (for Railway)")
     
     # -------------------------------------------------------------------------
-    # Stripe
+    # Stripe - Optional for initial deployment
     # -------------------------------------------------------------------------
-    STRIPE_SECRET_KEY: str = Field(..., description="Stripe secret key")
-    STRIPE_PUBLISHABLE_KEY: str = Field(..., description="Stripe publishable key")
-    STRIPE_WEBHOOK_SECRET: str = Field(..., description="Stripe webhook signing secret")
-    STRIPE_MONTHLY_PRICE_ID: str = Field(..., description="Stripe price ID for monthly plan")
-    STRIPE_ANNUAL_PRICE_ID: str = Field(..., description="Stripe price ID for annual plan")
+    STRIPE_SECRET_KEY: Optional[str] = Field(
+        default=None,
+        description="Stripe secret key (optional - payments disabled without it)"
+    )
+    STRIPE_PUBLISHABLE_KEY: Optional[str] = Field(default=None, description="Stripe publishable key")
+    STRIPE_WEBHOOK_SECRET: Optional[str] = Field(default=None, description="Stripe webhook signing secret")
+    STRIPE_MONTHLY_PRICE_ID: Optional[str] = Field(default=None, description="Stripe price ID for monthly plan")
+    STRIPE_ANNUAL_PRICE_ID: Optional[str] = Field(default=None, description="Stripe price ID for annual plan")
     
     # -------------------------------------------------------------------------
-    # Google Cloud Storage
+    # Google Cloud Storage - Optional for initial deployment
     # -------------------------------------------------------------------------
-    GCS_BUCKET_NAME: str = Field(..., description="GCS bucket name")
-    GCS_PROJECT_ID: str = Field(..., description="GCP project ID")
+    GCS_BUCKET_NAME: Optional[str] = Field(
+        default=None,
+        description="GCS bucket name (optional - local storage used without it)"
+    )
+    GCS_PROJECT_ID: Optional[str] = Field(default=None, description="GCP project ID")
     GCS_SERVICE_ACCOUNT_PATH: Optional[str] = Field(default=None, description="Path to GCS service account JSON")
     GCS_SERVICE_ACCOUNT_JSON: Optional[str] = Field(default=None, description="GCS service account JSON as string")
     
@@ -100,7 +118,12 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Encryption
     # -------------------------------------------------------------------------
-    ENCRYPTION_KEY: str = Field(..., description="Fernet encryption key for API keys")
+    # WARNING: This default key is for DEVELOPMENT ONLY!
+    # Generate a real key with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    ENCRYPTION_KEY: str = Field(
+        default="ZGV2ZWxvcG1lbnRfa2V5X29ubHlfY2hhbmdlX3RoaXM=",
+        description="Fernet encryption key for API keys (MUST change in production!)"
+    )
     
     # -------------------------------------------------------------------------
     # Worker Configuration
