@@ -167,7 +167,7 @@ class Settings(BaseSettings):
     @classmethod
     def validate_app_env(cls, v: str) -> str:
         """Validate APP_ENV is one of the allowed values."""
-        allowed = {"development", "staging", "production"}
+        allowed = {"development", "staging", "production", "test"}
         if v not in allowed:
             raise ValueError(f"APP_ENV must be one of: {allowed}")
         return v
