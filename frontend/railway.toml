@@ -6,8 +6,8 @@
 # Use Nixpacks builder (auto-detects Node.js)
 builder = "nixpacks"
 
-# Build command - install and build
-buildCommand = "npm ci && npm run build"
+# Build command - use npm install instead of ci to avoid cache issues
+buildCommand = "npm install --legacy-peer-deps && npm run build"
 
 [deploy]
 # Serve static files from dist directory
