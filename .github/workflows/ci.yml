@@ -137,5 +137,5 @@ jobs:
         run: npm ci
         
       - name: Build (skip type check for now)
-        run: vite build
+        run: npx vite build
         # Skip tsc for now until type errors are fixed
