@@ -97,6 +97,31 @@ async def get_providers_by_category():
     return IntegrationService.get_providers_by_category()
 
 
+@router.get("/readiness", response_model=dict)
+async def check_readiness(
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Check if user has minimum required integrations to generate videos.
+    
+    **Requires:** Authentication
+    """
+    integration_service = IntegrationService(db)
+    status_info = integration_service.get_integration_status(user.id)
+    
+    # Get configured categories
+    integrations = integration_service.get_user_integrations(user.id)
+    configured_categories = list(set(i.category.value for i in integrations if i.is_active))
+    
+    return {
+        "ready": status_info["can_generate_videos"],
+        "can_generate_videos": status_info["can_generate_videos"],
+        "missing_categories": status_info["missing_categories"],
+        "configured_categories": configured_categories,
+    }
+
+
 # =============================================================================
 # User's Integrations
 # =============================================================================

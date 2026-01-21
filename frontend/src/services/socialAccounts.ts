@@ -11,8 +11,9 @@ export interface SocialAccountListResponse {
 }
 
 export interface OAuthInitResponse {
-  auth_url: string
+  authorization_url: string
   state: string
+  platform: string
 }
 
 export interface OAuthCallbackResponse {
@@ -37,7 +38,7 @@ export const socialAccountsService = {
    * Initiate OAuth flow for a platform.
    */
   initiateOAuth: (platform: SocialPlatform) =>
-    apiClient.post<OAuthInitResponse>(`/social-accounts/oauth/${platform}/init`),
+    apiClient.post<OAuthInitResponse>(`/social-accounts/connect/${platform}`),
 
   /**
    * Complete OAuth callback.

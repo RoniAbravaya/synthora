@@ -49,10 +49,10 @@ import type { Integration, AvailableIntegration, IntegrationCategory } from "@/t
 import toast from "react-hot-toast"
 
 // =============================================================================
-// Category Display Names
+// Category Display Names & Icons
 // =============================================================================
 
-const categoryNames: Record<IntegrationCategory, string> = {
+const categoryNames: Record<string, string> = {
   script: "Script Generation",
   voice: "Voice Generation",
   media: "Stock Media",
@@ -60,12 +60,61 @@ const categoryNames: Record<IntegrationCategory, string> = {
   assembly: "Video Assembly",
 }
 
-const categoryIcons: Record<IntegrationCategory, string> = {
+const categoryIcons: Record<string, string> = {
   script: "📝",
   voice: "🎙️",
   media: "🖼️",
   video_ai: "🎬",
   assembly: "🎞️",
+}
+
+// Provider info for display
+const providerInfo: Record<string, { name: string; description: string; docsUrl: string }> = {
+  openai: {
+    name: "OpenAI",
+    description: "GPT-4 for script generation and content creation",
+    docsUrl: "https://platform.openai.com/api-keys",
+  },
+  anthropic: {
+    name: "Anthropic",
+    description: "Claude AI for script generation",
+    docsUrl: "https://console.anthropic.com/",
+  },
+  elevenlabs: {
+    name: "ElevenLabs",
+    description: "High-quality AI voice generation",
+    docsUrl: "https://elevenlabs.io/app/api-keys",
+  },
+  playht: {
+    name: "Play.ht",
+    description: "Natural AI voice synthesis",
+    docsUrl: "https://play.ht/studio/api-access",
+  },
+  pexels: {
+    name: "Pexels",
+    description: "Free stock photos and videos",
+    docsUrl: "https://www.pexels.com/api/",
+  },
+  pixabay: {
+    name: "Pixabay",
+    description: "Free images and videos",
+    docsUrl: "https://pixabay.com/api/docs/",
+  },
+  runway: {
+    name: "Runway",
+    description: "AI video generation and editing",
+    docsUrl: "https://runwayml.com/api",
+  },
+  heygen: {
+    name: "HeyGen",
+    description: "AI avatar video generation",
+    docsUrl: "https://heygen.com",
+  },
+  remotion: {
+    name: "Remotion",
+    description: "Programmatic video creation",
+    docsUrl: "https://www.remotion.dev/docs/",
+  },
 }
 
 // =============================================================================
@@ -102,12 +151,14 @@ function IntegrationCard({
       const response = await integrationsService.revealKey(integration.id)
       setFullKey(response.api_key)
       setShowKey(true)
-    } catch (error) {
+    } catch {
       toast.error("Failed to reveal API key")
     } finally {
       setIsRevealing(false)
     }
   }
+
+  const info = providerInfo[integration.provider] || { name: integration.provider, description: "" }
 
   return (
     <Card className={cn(!integration.is_active && "opacity-60")}>
@@ -127,9 +178,9 @@ function IntegrationCard({
               )}
             </div>
             <div>
-              <CardTitle className="text-base">{integration.provider}</CardTitle>
+              <CardTitle className="text-base">{info.name}</CardTitle>
               <CardDescription className="text-xs">
-                {categoryNames[integration.category]}
+                {categoryNames[integration.category] || integration.category}
               </CardDescription>
             </div>
           </div>
@@ -242,14 +293,19 @@ function AddIntegrationDialog({
   const handleAdd = async () => {
     if (!selectedProvider || !apiKey.trim()) return
 
-    await addMutation.mutateAsync({
-      provider: selectedProvider.provider,
-      api_key: apiKey.trim(),
-    })
+    try {
+      await addMutation.mutateAsync({
+        provider: selectedProvider.provider,
+        api_key: apiKey.trim(),
+      })
 
-    setSelectedProvider(null)
-    setApiKey("")
-    onOpenChange(false)
+      setSelectedProvider(null)
+      setApiKey("")
+      onOpenChange(false)
+      toast.success("Integration added successfully!")
+    } catch {
+      toast.error("Failed to add integration")
+    }
   }
 
   const filteredIntegrations = availableIntegrations.filter(
@@ -259,14 +315,19 @@ function AddIntegrationDialog({
   // Group by category
   const groupedIntegrations = filteredIntegrations.reduce(
     (acc, integration) => {
-      if (!acc[integration.category]) {
-        acc[integration.category] = []
+      const cat = integration.category as string
+      if (!acc[cat]) {
+        acc[cat] = []
       }
-      acc[integration.category].push(integration)
+      acc[cat].push(integration)
       return acc
     },
-    {} as Record<IntegrationCategory, AvailableIntegration[]>
+    {} as Record<string, AvailableIntegration[]>
   )
+
+  const getProviderInfo = (provider: string) => {
+    return providerInfo[provider] || { name: provider, description: "", docsUrl: "" }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -283,48 +344,58 @@ function AddIntegrationDialog({
             {Object.entries(groupedIntegrations).map(([category, integrations]) => (
               <div key={category}>
                 <h4 className="mb-2 flex items-center gap-2 text-sm font-medium">
-                  <span>{categoryIcons[category as IntegrationCategory]}</span>
-                  {categoryNames[category as IntegrationCategory]}
+                  <span>{categoryIcons[category] || "🔧"}</span>
+                  {categoryNames[category] || category}
                 </h4>
                 <div className="grid gap-2">
-                  {integrations.map((integration) => (
-                    <button
-                      key={integration.provider}
-                      className="flex items-center justify-between rounded-lg border p-3 text-left transition-colors hover:bg-accent"
-                      onClick={() => setSelectedProvider(integration)}
-                    >
-                      <div>
-                        <p className="font-medium">{integration.display_name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {integration.description}
-                        </p>
-                      </div>
-                      {integration.required && (
-                        <span className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                          Required
-                        </span>
-                      )}
-                    </button>
-                  ))}
+                  {integrations.map((integration) => {
+                    const info = getProviderInfo(integration.provider)
+                    return (
+                      <button
+                        key={integration.provider}
+                        className="flex items-center justify-between rounded-lg border p-3 text-left transition-colors hover:bg-accent"
+                        onClick={() => setSelectedProvider(integration)}
+                      >
+                        <div>
+                          <p className="font-medium">{info.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {info.description}
+                          </p>
+                        </div>
+                        {integration.required && (
+                          <span className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                            Required
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             ))}
+            {Object.keys(groupedIntegrations).length === 0 && (
+              <div className="py-8 text-center text-muted-foreground">
+                All available integrations have been configured.
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
             <div className="rounded-lg border p-4">
-              <h4 className="font-medium">{selectedProvider.display_name}</h4>
+              <h4 className="font-medium">{getProviderInfo(selectedProvider.provider).name}</h4>
               <p className="text-sm text-muted-foreground">
-                {selectedProvider.description}
+                {getProviderInfo(selectedProvider.provider).description}
               </p>
-              <a
-                href={selectedProvider.docs_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline"
-              >
-                Get API Key <ExternalLink className="h-3 w-3" />
-              </a>
+              {getProviderInfo(selectedProvider.provider).docsUrl && (
+                <a
+                  href={getProviderInfo(selectedProvider.provider).docsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                >
+                  Get API Key <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -383,9 +454,13 @@ export default function IntegrationsPage() {
   const validateMutation = useValidateIntegration()
   const toggleMutation = useToggleIntegration()
 
-  const integrations = Array.isArray(integrationsData?.integrations) ? integrationsData.integrations : []
-  const availableIntegrations = Array.isArray(availableData?.integrations) ? availableData.integrations : []
-  const categories = Array.isArray(availableData?.categories) ? availableData.categories : []
+  // Safely extract data with defaults
+  const integrations = integrationsData?.integrations || []
+  const availableIntegrations = availableData?.integrations || []
+  
+  // Categories from backend is a dict: { category_key: display_name }
+  const categoriesDict = availableData?.categories || {}
+  const categoryKeys = Object.keys(categoriesDict)
 
   const existingProviders = integrations.map((i) => i.provider)
 
@@ -396,13 +471,10 @@ export default function IntegrationsPage() {
       : integrations.filter((i) => i.category === activeTab)
 
   // Calculate readiness progress
-  const configuredCategories = Array.isArray(readinessData?.configured_categories) ? readinessData.configured_categories : []
-  const missingCategories = Array.isArray(readinessData?.missing_categories) ? readinessData.missing_categories : []
-  const requiredCategories = categories.filter((c) => c.required_count > 0)
-  const readinessProgress =
-    requiredCategories.length > 0
-      ? (configuredCategories.length / requiredCategories.length) * 100
-      : 0
+  const configuredCategories = readinessData?.configured_categories || []
+  const missingCategories = readinessData?.missing_categories || []
+  const totalRequired = 4 // Minimum required categories
+  const readinessProgress = (configuredCategories.length / totalRequired) * 100
 
   if (integrationsLoading || availableLoading) {
     return (
@@ -452,11 +524,13 @@ export default function IntegrationsPage() {
             <p className="text-sm text-muted-foreground">
               {readinessData?.ready
                 ? "All required integrations are configured."
-                : `Configure integrations for: ${missingCategories
-                    .map((c) => categoryNames[c])
-                    .join(", ")}`}
+                : missingCategories.length > 0
+                ? `Configure integrations for: ${missingCategories
+                    .map((c) => categoryNames[c] || c)
+                    .join(", ")}`
+                : "Add integrations to get started."}
             </p>
-            <Progress value={readinessProgress} className="mt-2 h-2" />
+            <Progress value={Math.min(readinessProgress, 100)} className="mt-2 h-2" />
           </div>
         </CardContent>
       </Card>
@@ -467,11 +541,11 @@ export default function IntegrationsPage() {
           <TabsTrigger value="all">
             All ({integrations.length})
           </TabsTrigger>
-          {categories.map((category) => {
-            const count = integrations.filter((i) => i.category === category.name).length
+          {categoryKeys.map((catKey) => {
+            const count = integrations.filter((i) => i.category === catKey).length
             return (
-              <TabsTrigger key={category.name} value={category.name}>
-                {categoryIcons[category.name]} {category.display_name} ({count})
+              <TabsTrigger key={catKey} value={catKey}>
+                {categoryIcons[catKey] || "🔧"} {categoriesDict[catKey] || catKey} ({count})
               </TabsTrigger>
             )
           })}

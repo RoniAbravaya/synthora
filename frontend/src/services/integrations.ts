@@ -7,17 +7,15 @@ import type { Integration, AvailableIntegration, IntegrationCategory } from "@/t
 
 export interface IntegrationListResponse {
   integrations: Integration[]
-  total: number
+  minimum_required: number
+  configured_count: number
+  can_generate_videos: boolean
+  missing_categories: string[]
 }
 
 export interface AvailableIntegrationsResponse {
   integrations: AvailableIntegration[]
-  categories: {
-    name: IntegrationCategory
-    display_name: string
-    description: string
-    required_count: number
-  }[]
+  categories: Record<string, string>  // category_key -> display_name
 }
 
 export interface AddIntegrationRequest {
@@ -42,8 +40,9 @@ export interface RevealKeyResponse {
 
 export interface ReadinessResponse {
   ready: boolean
-  missing_categories: IntegrationCategory[]
-  configured_categories: IntegrationCategory[]
+  missing_categories: string[]
+  configured_categories: string[]
+  can_generate_videos: boolean
 }
 
 export const integrationsService = {

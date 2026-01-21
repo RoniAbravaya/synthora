@@ -44,7 +44,7 @@ export function useInitiateOAuth() {
     mutationFn: (platform: SocialPlatform) => socialAccountsService.initiateOAuth(platform),
     onSuccess: (data) => {
       // Redirect to OAuth provider
-      window.location.href = data.auth_url
+      window.location.href = data.authorization_url
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to start authentication")
