@@ -346,6 +346,10 @@ def queue_analytics_sync(post_id: UUID, queue_name: str = "analytics") -> Option
         from rq import Queue
         from app.core.config import get_settings
         
+        settings = get_settings()
+        if not settings.REDIS_URL:
+            logger.warning("REDIS_URL not configured, skipping analytics queue")
+            return None
         redis_conn = Redis.from_url(settings.REDIS_URL)
         queue = Queue(queue_name, connection=redis_conn)
         
@@ -378,6 +382,10 @@ def queue_user_analytics_sync(user_id: UUID, queue_name: str = "analytics") -> O
         from rq import Queue
         from app.core.config import get_settings
         
+        settings = get_settings()
+        if not settings.REDIS_URL:
+            logger.warning("REDIS_URL not configured, skipping analytics queue")
+            return None
         redis_conn = Redis.from_url(settings.REDIS_URL)
         queue = Queue(queue_name, connection=redis_conn)
         
