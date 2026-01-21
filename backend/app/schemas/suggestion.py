@@ -11,7 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.common import BaseSchema, IDSchema, TimestampSchema
-from app.models.ai_suggestion import SuggestionType, SuggestionPriority
+from app.models.ai_suggestion import SuggestionType
 
 
 # =============================================================================
