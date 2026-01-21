@@ -23,14 +23,13 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Python virtual env lib folders (use leading slash to avoid matching frontend/src/lib/)
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -38,6 +37,9 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+# Python build/dist folders (backend specific)
+backend/build/
+backend/dist/
 
 # Virtual environments
 venv/
