@@ -47,8 +47,14 @@ if config.config_file_name is not None:
 # Add your model's MetaData object here for 'autogenerate' support
 target_metadata = Base.metadata
 
-# Override sqlalchemy.url with our environment variable
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Get settings and override sqlalchemy.url with our environment variable
+settings = get_settings()
+if settings.DATABASE_URL:
+    # Convert postgres:// to postgresql:// for SQLAlchemy 2.0 compatibility
+    database_url = settings.DATABASE_URL
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    config.set_main_option("sqlalchemy.url", database_url)
 
 
 def run_migrations_offline() -> None:
