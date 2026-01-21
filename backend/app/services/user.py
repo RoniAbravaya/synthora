@@ -83,7 +83,7 @@ class UserService:
         self,
         skip: int = 0,
         limit: int = 20,
-        role: Optional[UserRole] = None,
+        role: Optional[str] = None,
         is_active: Optional[bool] = None,
         search: Optional[str] = None,
     ) -> tuple[List[User], int]:
@@ -110,7 +110,7 @@ class UserService:
         if search:
             search_term = f"%{search}%"
             query = query.filter(
-                (User.email.ilike(search_term)) | (User.name.ilike(search_term))
+                (User.email.ilike(search_term)) | (User.display_name.ilike(search_term))
             )
         
         # Get total count
@@ -128,7 +128,7 @@ class UserService:
     def create_user(
         self,
         firebase_user: UserInfo,
-        role: UserRole = UserRole.FREE,
+        role: str = "free",
     ) -> User:
         """
         Create a new user from Firebase authentication info.
@@ -142,19 +142,18 @@ class UserService:
         """
         user = User(
             email=firebase_user.email,
-            name=firebase_user.name,
-            avatar_url=firebase_user.picture,
+            display_name=firebase_user.name,
+            photo_url=firebase_user.picture,
             firebase_uid=firebase_user.uid,
             role=role,
             is_active=True,
-            last_login_at=datetime.utcnow(),
         )
         
         self.db.add(user)
         self.db.commit()
         self.db.refresh(user)
         
-        logger.info(f"Created new user: {user.email} with role {role.value}")
+        logger.info(f"Created new user: {user.email} with role {role}")
         return user
     
     def create_or_update_from_firebase(self, firebase_user: UserInfo) -> tuple[User, bool]:
@@ -173,14 +172,11 @@ class UserService:
         user = self.get_by_firebase_uid(firebase_user.uid)
         
         if user:
-            # Update existing user
-            user.last_login_at = datetime.utcnow()
-            
-            # Update profile info if changed
-            if firebase_user.name and user.name != firebase_user.name:
-                user.name = firebase_user.name
-            if firebase_user.picture and user.avatar_url != firebase_user.picture:
-                user.avatar_url = firebase_user.picture
+            # Update existing user profile info if changed
+            if firebase_user.name and user.display_name != firebase_user.name:
+                user.display_name = firebase_user.name
+            if firebase_user.picture and user.photo_url != firebase_user.picture:
+                user.photo_url = firebase_user.picture
             
             self.db.commit()
             self.db.refresh(user)
@@ -190,9 +186,9 @@ class UserService:
         
         # Create new user
         # Check if this should be the first admin
-        role = UserRole.FREE
+        role = "free"
         if self._should_be_first_admin():
-            role = UserRole.ADMIN
+            role = "admin"
             logger.info("First user - assigning admin role")
         
         user = self.create_user(firebase_user, role=role)
@@ -201,24 +197,24 @@ class UserService:
     def update_user(
         self,
         user: User,
-        name: Optional[str] = None,
-        avatar_url: Optional[str] = None,
+        display_name: Optional[str] = None,
+        photo_url: Optional[str] = None,
     ) -> User:
         """
         Update user profile information.
         
         Args:
             user: User instance to update
-            name: New display name (optional)
-            avatar_url: New avatar URL (optional)
+            display_name: New display name (optional)
+            photo_url: New avatar URL (optional)
             
         Returns:
             Updated User instance
         """
-        if name is not None:
-            user.name = name
-        if avatar_url is not None:
-            user.avatar_url = avatar_url
+        if display_name is not None:
+            user.display_name = display_name
+        if photo_url is not None:
+            user.photo_url = photo_url
         
         self.db.commit()
         self.db.refresh(user)
@@ -226,7 +222,7 @@ class UserService:
         logger.info(f"Updated user profile: {user.email}")
         return user
     
-    def update_role(self, user: User, new_role: UserRole) -> User:
+    def update_role(self, user: User, new_role: str) -> User:
         """
         Update a user's role.
         
@@ -243,7 +239,7 @@ class UserService:
         self.db.commit()
         self.db.refresh(user)
         
-        logger.info(f"Updated user role: {user.email} from {old_role.value} to {new_role.value}")
+        logger.info(f"Updated user role: {user.email} from {old_role} to {new_role}")
         return user
     
     def set_active_status(self, user: User, is_active: bool) -> User:
@@ -266,6 +262,21 @@ class UserService:
         logger.info(f"User account {status}: {user.email}")
         return user
     
+    def make_admin_by_email(self, email: str) -> Optional[User]:
+        """
+        Make a user admin by their email address.
+        
+        Args:
+            email: User's email address
+            
+        Returns:
+            Updated User instance or None if not found
+        """
+        user = self.get_by_email(email)
+        if user:
+            return self.update_role(user, "admin")
+        return None
+    
     # =========================================================================
     # Statistics Methods
     # =========================================================================
@@ -282,9 +293,9 @@ class UserService:
         
         # Users by role
         by_role = {}
-        for role in UserRole:
+        for role in ["admin", "premium", "free"]:
             count = self.db.query(User).filter(User.role == role).count()
-            by_role[role.value] = count
+            by_role[role] = count
         
         # Active users
         active = self.db.query(User).filter(User.is_active == True).count()
@@ -323,8 +334,8 @@ class UserService:
         subscription_plan = None
         subscription_status = None
         if subscription:
-            subscription_plan = subscription.plan.value
-            subscription_status = subscription.status.value
+            subscription_plan = subscription.plan
+            subscription_status = subscription.status
         
         # Count user's content
         videos_count = self.db.query(Video).filter(Video.user_id == user.id).count()
@@ -355,7 +366,7 @@ class UserService:
         Returns True if no admin exists yet (first user setup).
         """
         admin_exists = self.db.query(User).filter(
-            User.role == UserRole.ADMIN
+            User.role == "admin"
         ).first() is not None
         
         return not admin_exists
@@ -367,12 +378,12 @@ class UserService:
         Used to determine if initial setup is complete.
         """
         return self.db.query(User).filter(
-            User.role == UserRole.ADMIN
+            User.role == "admin"
         ).first() is not None
     
     def get_admin_count(self) -> int:
         """Get the number of admin users."""
-        return self.db.query(User).filter(User.role == UserRole.ADMIN).count()
+        return self.db.query(User).filter(User.role == "admin").count()
 
 
 def get_user_service(db: Session) -> UserService:
@@ -389,4 +400,3 @@ def get_user_service(db: Session) -> UserService:
     ```
     """
     return UserService(db)
-

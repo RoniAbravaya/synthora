@@ -9,12 +9,11 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Column, String, Boolean, DateTime, Enum, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Boolean, DateTime
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
-import uuid
 
-from app.core.database import Base, TimestampMixin, UUIDMixin
+from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.subscription import Subscription
@@ -40,19 +39,22 @@ class UserRole(str, enum.Enum):
     FREE = "free"
 
 
-class User(Base, UUIDMixin, TimestampMixin):
+class User(Base):
     """
     User model representing a registered user.
     
+    This model matches the database schema from migration 001_initial_schema.
+    
     Attributes:
         id: Unique identifier (UUID)
-        email: User's email address (from Firebase)
-        name: Display name
-        avatar_url: Profile picture URL
-        role: User role (admin, premium, free)
         firebase_uid: Firebase Authentication UID
+        email: User's email address (from Firebase)
+        display_name: Display name
+        photo_url: Profile picture URL
+        role: User role (admin, premium, free)
         is_active: Whether the account is active
-        last_login_at: Timestamp of last login
+        stripe_customer_id: Stripe customer ID
+        preferences: User preferences (JSONB)
         created_at: Account creation timestamp
         updated_at: Last update timestamp
     
@@ -69,24 +71,8 @@ class User(Base, UUIDMixin, TimestampMixin):
     
     __tablename__ = "users"
     
-    # Basic Info
-    email = Column(
-        String(255),
-        unique=True,
-        nullable=False,
-        index=True,
-        doc="User's email address"
-    )
-    name = Column(
-        String(255),
-        nullable=True,
-        doc="User's display name"
-    )
-    avatar_url = Column(
-        Text,
-        nullable=True,
-        doc="URL to user's profile picture"
-    )
+    # Primary Key
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
     
     # Authentication
     firebase_uid = Column(
@@ -97,12 +83,30 @@ class User(Base, UUIDMixin, TimestampMixin):
         doc="Firebase Authentication UID"
     )
     
-    # Role & Status
-    role = Column(
-        Enum(UserRole),
-        default=UserRole.FREE,
+    # Basic Info
+    email = Column(
+        String(255),
+        unique=True,
         nullable=False,
         index=True,
+        doc="User's email address"
+    )
+    display_name = Column(
+        String(255),
+        nullable=True,
+        doc="User's display name"
+    )
+    photo_url = Column(
+        String(500),
+        nullable=True,
+        doc="URL to user's profile picture"
+    )
+    
+    # Role & Status
+    role = Column(
+        String(20),
+        default="free",
+        nullable=False,
         doc="User's role (admin, premium, free)"
     )
     is_active = Column(
@@ -112,11 +116,31 @@ class User(Base, UUIDMixin, TimestampMixin):
         doc="Whether the account is active"
     )
     
-    # Activity Tracking
-    last_login_at = Column(
-        DateTime,
+    # Stripe
+    stripe_customer_id = Column(
+        String(255),
+        unique=True,
         nullable=True,
-        doc="Timestamp of last login"
+        doc="Stripe customer ID"
+    )
+    
+    # Preferences
+    preferences = Column(
+        JSONB,
+        nullable=True,
+        doc="User preferences"
+    )
+    
+    # Timestamps
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Account creation timestamp"
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Last update timestamp"
     )
     
     # Relationships
@@ -172,14 +196,24 @@ class User(Base, UUIDMixin, TimestampMixin):
         return f"<User(id={self.id}, email={self.email}, role={self.role})>"
     
     @property
+    def name(self) -> Optional[str]:
+        """Alias for display_name for backwards compatibility."""
+        return self.display_name
+    
+    @property
+    def avatar_url(self) -> Optional[str]:
+        """Alias for photo_url for backwards compatibility."""
+        return self.photo_url
+    
+    @property
     def is_admin(self) -> bool:
         """Check if user is an admin."""
-        return self.role == UserRole.ADMIN
+        return self.role == UserRole.ADMIN.value or self.role == "admin"
     
     @property
     def is_premium(self) -> bool:
         """Check if user has premium access (admin or premium)."""
-        return self.role in (UserRole.ADMIN, UserRole.PREMIUM)
+        return self.role in (UserRole.ADMIN.value, UserRole.PREMIUM.value, "admin", "premium")
     
     @property
     def can_schedule(self) -> bool:
@@ -204,4 +238,3 @@ class User(Base, UUIDMixin, TimestampMixin):
         if self.is_premium:
             return None  # Indefinite
         return 30  # Free users: 30 days
-

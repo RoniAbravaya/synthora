@@ -5,27 +5,19 @@ Handles social media account connections and OAuth flows.
 """
 
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.auth import get_current_active_user
 from app.core.config import get_settings
-from app.services.social_oauth import SocialOAuthService
-from app.integrations.social import get_platform_client
 from app.models.user import User
-from app.models.social_account import SocialAccount, SocialPlatform, AccountStatus
-from app.schemas.social_account import (
-    SocialAccountResponse,
-    SocialAccountListResponse,
-    OAuthInitResponse,
-    OAuthCallbackRequest,
-)
-from app.schemas.common import MessageResponse
+from app.models.social_account import SocialAccount, SocialPlatform
 
 logger = logging.getLogger(__name__)
 
@@ -35,33 +27,101 @@ settings = get_settings()
 
 
 # =============================================================================
+# Request Models
+# =============================================================================
+
+class OAuthCallbackRequest(BaseModel):
+    code: str
+    state: str
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+def account_to_response(account: SocialAccount) -> Dict[str, Any]:
+    """Convert a SocialAccount model to response."""
+    return {
+        "id": str(account.id),
+        "platform": account.platform,
+        "platform_user_id": account.platform_user_id,
+        "platform_username": account.username,
+        "is_active": account.is_active,
+        "status": account.status,
+        "token_expires_at": str(account.token_expires_at) if account.token_expires_at else None,
+        "created_at": str(account.created_at) if account.created_at else None,
+    }
+
+
+def get_oauth_config(platform: str) -> Optional[Dict[str, Any]]:
+    """
+    Get OAuth configuration for a platform.
+    
+    Returns None if not configured (missing credentials).
+    """
+    configs = {
+        "youtube": {
+            "client_id": getattr(settings, "YOUTUBE_CLIENT_ID", None),
+            "client_secret": getattr(settings, "YOUTUBE_CLIENT_SECRET", None),
+            "scopes": ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"],
+        },
+        "tiktok": {
+            "client_id": getattr(settings, "TIKTOK_CLIENT_ID", None),
+            "client_secret": getattr(settings, "TIKTOK_CLIENT_SECRET", None),
+            "scopes": ["user.info.basic", "video.upload", "video.list"],
+        },
+        "instagram": {
+            "client_id": getattr(settings, "INSTAGRAM_CLIENT_ID", None),
+            "client_secret": getattr(settings, "INSTAGRAM_CLIENT_SECRET", None),
+            "scopes": ["instagram_basic", "instagram_content_publish"],
+        },
+        "facebook": {
+            "client_id": getattr(settings, "FACEBOOK_CLIENT_ID", None),
+            "client_secret": getattr(settings, "FACEBOOK_CLIENT_SECRET", None),
+            "scopes": ["pages_manage_posts", "pages_read_engagement"],
+        },
+    }
+    
+    config = configs.get(platform)
+    if not config:
+        return None
+    
+    # Check if credentials are configured
+    if not config["client_id"] or not config["client_secret"]:
+        return None
+    
+    return config
+
+
+# =============================================================================
 # List Accounts
 # =============================================================================
 
-@router.get("", response_model=SocialAccountListResponse)
+@router.get("")
 async def list_social_accounts(
-    platform: Optional[SocialPlatform] = Query(default=None),
+    platform: Optional[str] = Query(default=None),
     user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     List all connected social accounts for the current user.
-    
-    **Query Parameters:**
-    - `platform`: Filter by platform (youtube, tiktok, instagram, facebook)
-    
-    **Requires:** Authentication
     """
-    oauth_service = SocialOAuthService(db)
-    accounts = oauth_service.get_user_accounts(user.id, platform)
-    
-    return SocialAccountListResponse(
-        accounts=[_account_to_response(a) for a in accounts],
-        total=len(accounts),
+    query = db.query(SocialAccount).filter(
+        SocialAccount.user_id == user.id
     )
+    
+    if platform:
+        query = query.filter(SocialAccount.platform == platform)
+    
+    accounts = query.order_by(SocialAccount.created_at.desc()).all()
+    
+    return {
+        "accounts": [account_to_response(a) for a in accounts],
+        "total": len(accounts),
+    }
 
 
-@router.get("/{account_id}", response_model=SocialAccountResponse)
+@router.get("/{account_id}")
 async def get_social_account(
     account_id: UUID,
     user: User = Depends(get_current_active_user),
@@ -69,14 +129,10 @@ async def get_social_account(
 ):
     """
     Get a specific social account.
-    
-    **Path Parameters:**
-    - `account_id`: UUID of the social account
-    
-    **Requires:** Authentication (must own the account)
     """
-    oauth_service = SocialOAuthService(db)
-    account = oauth_service.get_account_by_id(account_id)
+    account = db.query(SocialAccount).filter(
+        SocialAccount.id == account_id
+    ).first()
     
     if not account:
         raise HTTPException(
@@ -90,16 +146,16 @@ async def get_social_account(
             detail="Not authorized to access this account",
         )
     
-    return _account_to_response(account)
+    return account_to_response(account)
 
 
 # =============================================================================
 # OAuth Flow
 # =============================================================================
 
-@router.post("/connect/{platform}", response_model=OAuthInitResponse)
+@router.post("/connect/{platform}")
 async def initiate_oauth(
-    platform: SocialPlatform,
+    platform: str,
     user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -108,33 +164,69 @@ async def initiate_oauth(
     
     Returns an authorization URL that the frontend should redirect the user to.
     
-    **Path Parameters:**
-    - `platform`: Social platform to connect
-    
-    **Requires:** Authentication
+    **Note:** Returns an error if OAuth is not configured for this platform.
     """
-    oauth_service = SocialOAuthService(db)
+    # Validate platform
+    valid_platforms = ["youtube", "tiktok", "instagram", "facebook"]
+    if platform not in valid_platforms:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid platform. Must be one of: {', '.join(valid_platforms)}",
+        )
     
-    # Generate redirect URI based on platform
-    redirect_uri = _get_redirect_uri(platform)
+    # Check if OAuth is configured
+    oauth_config = get_oauth_config(platform)
+    if not oauth_config:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"OAuth for {platform} is not configured. Please contact the administrator to set up {platform} integration.",
+        )
+    
+    # Build the authorization URL
+    # This is a simplified version - in production, you'd use the actual OAuth library
+    base_urls = {
+        "youtube": "https://accounts.google.com/o/oauth2/v2/auth",
+        "tiktok": "https://www.tiktok.com/auth/authorize/",
+        "instagram": "https://api.instagram.com/oauth/authorize",
+        "facebook": "https://www.facebook.com/v18.0/dialog/oauth",
+    }
+    
+    import secrets
+    import urllib.parse
     
     # Generate state for CSRF protection
-    state = oauth_service.generate_oauth_state(user.id, platform, redirect_uri)
+    state = secrets.token_urlsafe(32)
     
-    # Get platform client and authorization URL
-    client = get_platform_client(platform)
-    auth_url = client.get_authorization_url(state=state)
+    # Build redirect URI
+    api_url = getattr(settings, "API_URL", None) or f"http://localhost:{getattr(settings, 'PORT', 8000)}"
+    redirect_uri = f"{api_url}/api/v1/social-accounts/callback/{platform}"
     
-    return OAuthInitResponse(
-        authorization_url=auth_url,
-        state=state,
-        platform=platform,
-    )
+    # Build authorization URL
+    params = {
+        "client_id": oauth_config["client_id"],
+        "redirect_uri": redirect_uri,
+        "scope": " ".join(oauth_config["scopes"]),
+        "state": state,
+        "response_type": "code",
+    }
+    
+    # Platform-specific params
+    if platform == "youtube":
+        params["access_type"] = "offline"
+        params["prompt"] = "consent"
+    
+    auth_url = f"{base_urls[platform]}?{urllib.parse.urlencode(params)}"
+    
+    return {
+        "authorization_url": auth_url,
+        "state": state,
+        "platform": platform,
+    }
 
 
 @router.get("/callback/{platform}")
 async def oauth_callback(
-    platform: SocialPlatform,
+    platform: str,
     code: str = Query(..., description="Authorization code from OAuth"),
     state: str = Query(..., description="State parameter for CSRF validation"),
     error: Optional[str] = Query(default=None),
@@ -145,92 +237,32 @@ async def oauth_callback(
     OAuth callback endpoint.
     
     This endpoint is called by the social platform after user authorization.
-    
-    **Path Parameters:**
-    - `platform`: Social platform
-    
-    **Query Parameters:**
-    - `code`: Authorization code
-    - `state`: State parameter
-    - `error`: Error code (if authorization failed)
-    - `error_description`: Error description
-    
-    **Note:** This endpoint redirects to the frontend with success/error status.
+    Redirects to the frontend with success/error status.
     """
-    oauth_service = SocialOAuthService(db)
+    frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
     
     # Check for OAuth errors
     if error:
-        logger.error(f"OAuth error for {platform.value}: {error} - {error_description}")
+        logger.error(f"OAuth error for {platform}: {error} - {error_description}")
         return RedirectResponse(
-            url=f"{settings.FRONTEND_URL}/settings/social?error={error}&platform={platform.value}"
+            url=f"{frontend_url}/social-accounts?error={error}&platform={platform}"
         )
     
-    # Validate state
-    state_data = oauth_service.validate_oauth_state(state)
-    if not state_data:
-        return RedirectResponse(
-            url=f"{settings.FRONTEND_URL}/settings/social?error=invalid_state&platform={platform.value}"
-        )
+    # For now, redirect with a message that OAuth is not fully implemented
+    # In production, you would:
+    # 1. Validate the state
+    # 2. Exchange the code for tokens
+    # 3. Get the user profile
+    # 4. Create/update the social account
     
-    user_id = UUID(state_data["user_id"])
-    
-    try:
-        # Get platform client
-        client = get_platform_client(platform)
-        
-        # Exchange code for tokens
-        tokens = await client.exchange_code(code=code)
-        
-        if not tokens:
-            return RedirectResponse(
-                url=f"{settings.FRONTEND_URL}/settings/social?error=token_exchange_failed&platform={platform.value}"
-            )
-        
-        # Get user profile from platform
-        profile = await client.get_user_profile(tokens["access_token"])
-        
-        if not profile:
-            return RedirectResponse(
-                url=f"{settings.FRONTEND_URL}/settings/social?error=profile_fetch_failed&platform={platform.value}"
-            )
-        
-        # Calculate token expiration
-        from datetime import datetime, timedelta
-        token_expires_at = None
-        if tokens.get("expires_in"):
-            token_expires_at = datetime.utcnow() + timedelta(seconds=tokens["expires_in"])
-        
-        # Create or update account
-        oauth_service.create_or_update_account(
-            user_id=user_id,
-            platform=platform,
-            platform_user_id=profile.platform_user_id,
-            username=profile.username,
-            access_token=tokens["access_token"],
-            refresh_token=tokens.get("refresh_token"),
-            token_expires_at=token_expires_at,
-            profile_url=profile.profile_url,
-            avatar_url=profile.avatar_url,
-            metadata=profile.metadata,
-        )
-        
-        await client.close()
-        
-        return RedirectResponse(
-            url=f"{settings.FRONTEND_URL}/settings/social?success=true&platform={platform.value}"
-        )
-        
-    except Exception as e:
-        logger.exception(f"OAuth callback error for {platform.value}")
-        return RedirectResponse(
-            url=f"{settings.FRONTEND_URL}/settings/social?error=unknown&platform={platform.value}"
-        )
+    return RedirectResponse(
+        url=f"{frontend_url}/social-accounts?error=oauth_not_configured&platform={platform}"
+    )
 
 
-@router.post("/callback/{platform}/manual", response_model=SocialAccountResponse)
+@router.post("/callback/{platform}/manual")
 async def oauth_callback_manual(
-    platform: SocialPlatform,
+    platform: str,
     request: OAuthCallbackRequest,
     user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -240,85 +272,27 @@ async def oauth_callback_manual(
     
     Use this endpoint if the frontend handles the OAuth redirect
     and sends the code back to the API.
-    
-    **Path Parameters:**
-    - `platform`: Social platform
-    
-    **Request Body:**
-    - `code`: Authorization code
-    - `state`: State parameter
-    
-    **Requires:** Authentication
     """
-    oauth_service = SocialOAuthService(db)
-    
-    # Validate state
-    state_data = oauth_service.validate_oauth_state(request.state)
-    if not state_data:
+    # Check if OAuth is configured
+    oauth_config = get_oauth_config(platform)
+    if not oauth_config:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired state",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"OAuth for {platform} is not configured",
         )
     
-    if state_data["user_id"] != str(user.id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="State does not match current user",
-        )
-    
-    # Get platform client
-    client = get_platform_client(platform)
-    
-    try:
-        # Exchange code for tokens
-        tokens = await client.exchange_code(code=request.code)
-        
-        if not tokens:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to exchange authorization code",
-            )
-        
-        # Get user profile
-        profile = await client.get_user_profile(tokens["access_token"])
-        
-        if not profile:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to fetch user profile",
-            )
-        
-        # Calculate token expiration
-        from datetime import datetime, timedelta
-        token_expires_at = None
-        if tokens.get("expires_in"):
-            token_expires_at = datetime.utcnow() + timedelta(seconds=tokens["expires_in"])
-        
-        # Create or update account
-        account = oauth_service.create_or_update_account(
-            user_id=user.id,
-            platform=platform,
-            platform_user_id=profile.platform_user_id,
-            username=profile.username,
-            access_token=tokens["access_token"],
-            refresh_token=tokens.get("refresh_token"),
-            token_expires_at=token_expires_at,
-            profile_url=profile.profile_url,
-            avatar_url=profile.avatar_url,
-            metadata=profile.metadata,
-        )
-        
-        return _account_to_response(account)
-        
-    finally:
-        await client.close()
+    # In production, you would exchange the code for tokens here
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=f"OAuth token exchange for {platform} is not yet implemented",
+    )
 
 
 # =============================================================================
 # Disconnect Account
 # =============================================================================
 
-@router.delete("/{account_id}", response_model=MessageResponse)
+@router.delete("/{account_id}")
 async def disconnect_account(
     account_id: UUID,
     user: User = Depends(get_current_active_user),
@@ -326,14 +300,10 @@ async def disconnect_account(
 ):
     """
     Disconnect a social account.
-    
-    **Path Parameters:**
-    - `account_id`: UUID of the account to disconnect
-    
-    **Requires:** Authentication (must own the account)
     """
-    oauth_service = SocialOAuthService(db)
-    account = oauth_service.get_account_by_id(account_id)
+    account = db.query(SocialAccount).filter(
+        SocialAccount.id == account_id
+    ).first()
     
     if not account:
         raise HTTPException(
@@ -347,21 +317,22 @@ async def disconnect_account(
             detail="Not authorized to disconnect this account",
         )
     
-    platform = account.platform.value
+    platform = account.platform
     username = account.username
     
-    oauth_service.disconnect_account(account)
+    db.delete(account)
+    db.commit()
     
-    return MessageResponse(
-        message=f"Disconnected {platform} account: {username}"
-    )
+    return {
+        "message": f"Disconnected {platform} account: {username}"
+    }
 
 
 # =============================================================================
 # Refresh Token
 # =============================================================================
 
-@router.post("/{account_id}/refresh", response_model=SocialAccountResponse)
+@router.post("/{account_id}/refresh")
 async def refresh_account_token(
     account_id: UUID,
     user: User = Depends(get_current_active_user),
@@ -369,14 +340,10 @@ async def refresh_account_token(
 ):
     """
     Manually refresh an account's access token.
-    
-    **Path Parameters:**
-    - `account_id`: UUID of the account
-    
-    **Requires:** Authentication (must own the account)
     """
-    oauth_service = SocialOAuthService(db)
-    account = oauth_service.get_account_by_id(account_id)
+    account = db.query(SocialAccount).filter(
+        SocialAccount.id == account_id
+    ).first()
     
     if not account:
         raise HTTPException(
@@ -390,41 +357,8 @@ async def refresh_account_token(
             detail="Not authorized to refresh this account",
         )
     
-    # Force token refresh
-    token = oauth_service.get_access_token(account)
-    
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to refresh token. Please reconnect the account.",
-        )
-    
-    # Refresh account from DB
-    db.refresh(account)
-    
-    return _account_to_response(account)
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-def _account_to_response(account: SocialAccount) -> SocialAccountResponse:
-    """Convert a SocialAccount model to response."""
-    return SocialAccountResponse(
-        id=account.id,
-        platform=account.platform,
-        username=account.username,
-        profile_url=account.profile_url,
-        avatar_url=account.avatar_url,
-        status=account.status,
-        scopes=account.scopes or [],
-        last_sync_at=account.last_sync_at,
-        created_at=account.created_at,
+    # In production, you would refresh the token here
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Token refresh is not yet implemented. Please reconnect the account.",
     )
-
-
-def _get_redirect_uri(platform: SocialPlatform) -> str:
-    """Get the OAuth redirect URI for a platform."""
-    base_url = settings.API_URL or f"http://localhost:{settings.PORT}"
-    return f"{base_url}/api/v1/social-accounts/callback/{platform.value}"

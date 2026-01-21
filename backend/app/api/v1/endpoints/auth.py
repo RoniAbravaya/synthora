@@ -5,7 +5,7 @@ Handles user authentication via Firebase and session management.
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -24,11 +24,8 @@ from app.services.firebase import (
 )
 from app.services.user import UserService, get_user_service
 from app.models.user import User
-from app.models.app_settings import AppSettings
 from app.schemas.user import (
     FirebaseTokenRequest,
-    LoginResponse,
-    UserProfileResponse,
     SetupStatusResponse,
 )
 from app.schemas.common import MessageResponse
@@ -38,7 +35,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-@router.post("/login", response_model=LoginResponse)
+def user_to_response(user: User, profile_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert user to response format."""
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "display_name": user.display_name,
+        "photo_url": user.photo_url,
+        "role": user.role,
+        "is_active": user.is_active,
+        "created_at": str(user.created_at) if user.created_at else None,
+        "updated_at": str(user.updated_at) if user.updated_at else None,
+        **profile_data,
+    }
+
+
+@router.post("/login")
 async def login(
     request: FirebaseTokenRequest,
     db: Session = Depends(get_db),
@@ -84,25 +96,11 @@ async def login(
     # New users need to set up integrations before they can generate videos
     setup_required = is_new_user or profile_data["integrations_configured"] < 4
     
-    # Build response
-    user_profile = UserProfileResponse(
-        id=user.id,
-        email=user.email,
-        name=user.name,
-        avatar_url=user.avatar_url,
-        role=user.role,
-        is_active=user.is_active,
-        last_login_at=user.last_login_at,
-        created_at=user.created_at,
-        updated_at=user.updated_at,
-        **profile_data,
-    )
-    
-    return LoginResponse(
-        user=user_profile,
-        is_new_user=is_new_user,
-        setup_required=setup_required,
-    )
+    return {
+        "user": user_to_response(user, profile_data),
+        "is_new_user": is_new_user,
+        "setup_required": setup_required,
+    }
 
 
 @router.post("/logout", response_model=MessageResponse)
@@ -132,7 +130,7 @@ async def logout(
         return MessageResponse(message="Logged out (token revocation failed)")
 
 
-@router.get("/me", response_model=UserProfileResponse)
+@router.get("/me")
 async def get_current_user_profile(
     user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -151,18 +149,7 @@ async def get_current_user_profile(
     user_service = UserService(db)
     profile_data = user_service.get_user_profile_data(user)
     
-    return UserProfileResponse(
-        id=user.id,
-        email=user.email,
-        name=user.name,
-        avatar_url=user.avatar_url,
-        role=user.role,
-        is_active=user.is_active,
-        last_login_at=user.last_login_at,
-        created_at=user.created_at,
-        updated_at=user.updated_at,
-        **profile_data,
-    )
+    return user_to_response(user, profile_data)
 
 
 @router.get("/setup-status", response_model=SetupStatusResponse)
@@ -243,9 +230,4 @@ async def refresh_session(
     
     **Requires:** Authentication
     """
-    from datetime import datetime
-    
-    user.last_login_at = datetime.utcnow()
-    db.commit()
-    
     return MessageResponse(message="Session refreshed")

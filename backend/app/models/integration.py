@@ -7,13 +7,13 @@ API keys are stored encrypted using Fernet encryption.
 
 import enum
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Dict, Any
 
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Boolean, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Text
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
-from app.core.database import Base, TimestampMixin, UUIDMixin
+from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -32,13 +32,16 @@ class IntegrationProvider(str, enum.Enum):
     """
     # Script/Text AI
     OPENAI = "openai"
+    ANTHROPIC = "anthropic"
     
     # Voice AI
     ELEVENLABS = "elevenlabs"
+    PLAYHT = "playht"
     
     # Stock Media
     PEXELS = "pexels"
     UNSPLASH = "unsplash"
+    PIXABAY = "pixabay"
     
     # Video Generation AI
     RUNWAY = "runway"
@@ -51,6 +54,7 @@ class IntegrationProvider(str, enum.Enum):
     WAN = "wan"
     HAILUO = "hailuo"
     LTX = "ltx"
+    HEYGEN = "heygen"
     
     # Video Assembly
     FFMPEG = "ffmpeg"
@@ -64,17 +68,20 @@ class IntegrationCategory(str, enum.Enum):
     """Integration categories for grouping."""
     SCRIPT = "script"
     VOICE = "voice"
-    STOCK_MEDIA = "stock_media"
+    MEDIA = "media"
     VIDEO_AI = "video_ai"
-    VIDEO_ASSEMBLY = "video_assembly"
+    ASSEMBLY = "assembly"
 
 
 # Mapping of providers to their categories
 PROVIDER_CATEGORIES = {
     IntegrationProvider.OPENAI: IntegrationCategory.SCRIPT,
+    IntegrationProvider.ANTHROPIC: IntegrationCategory.SCRIPT,
     IntegrationProvider.ELEVENLABS: IntegrationCategory.VOICE,
-    IntegrationProvider.PEXELS: IntegrationCategory.STOCK_MEDIA,
-    IntegrationProvider.UNSPLASH: IntegrationCategory.STOCK_MEDIA,
+    IntegrationProvider.PLAYHT: IntegrationCategory.VOICE,
+    IntegrationProvider.PEXELS: IntegrationCategory.MEDIA,
+    IntegrationProvider.UNSPLASH: IntegrationCategory.MEDIA,
+    IntegrationProvider.PIXABAY: IntegrationCategory.MEDIA,
     IntegrationProvider.RUNWAY: IntegrationCategory.VIDEO_AI,
     IntegrationProvider.SORA: IntegrationCategory.VIDEO_AI,
     IntegrationProvider.VEO: IntegrationCategory.VIDEO_AI,
@@ -85,29 +92,33 @@ PROVIDER_CATEGORIES = {
     IntegrationProvider.WAN: IntegrationCategory.VIDEO_AI,
     IntegrationProvider.HAILUO: IntegrationCategory.VIDEO_AI,
     IntegrationProvider.LTX: IntegrationCategory.VIDEO_AI,
-    IntegrationProvider.FFMPEG: IntegrationCategory.VIDEO_ASSEMBLY,
-    IntegrationProvider.CREATOMATE: IntegrationCategory.VIDEO_ASSEMBLY,
-    IntegrationProvider.SHOTSTACK: IntegrationCategory.VIDEO_ASSEMBLY,
-    IntegrationProvider.REMOTION: IntegrationCategory.VIDEO_ASSEMBLY,
-    IntegrationProvider.EDITFRAME: IntegrationCategory.VIDEO_ASSEMBLY,
+    IntegrationProvider.HEYGEN: IntegrationCategory.VIDEO_AI,
+    IntegrationProvider.FFMPEG: IntegrationCategory.ASSEMBLY,
+    IntegrationProvider.CREATOMATE: IntegrationCategory.ASSEMBLY,
+    IntegrationProvider.SHOTSTACK: IntegrationCategory.ASSEMBLY,
+    IntegrationProvider.REMOTION: IntegrationCategory.ASSEMBLY,
+    IntegrationProvider.EDITFRAME: IntegrationCategory.ASSEMBLY,
 }
 
 
-class Integration(Base, UUIDMixin, TimestampMixin):
+class Integration(Base):
     """
     Integration model for storing user's API keys.
+    
+    This model matches the database schema from migration 001_initial_schema.
     
     Attributes:
         id: Unique identifier (UUID)
         user_id: Foreign key to user
         provider: The integration provider
-        api_key_encrypted: Encrypted API key (Fernet)
-        oauth_data_encrypted: Encrypted OAuth data (for OAuth integrations)
+        category: Integration category
+        api_key_encrypted: Encrypted API key
+        api_key_masked: Masked API key for display
         is_active: Whether the integration is active
-        is_validated: Whether the API key has been validated
-        validated_at: When the API key was last validated
-        last_used_at: When the integration was last used
-        error_message: Last error message if validation failed
+        is_valid: Whether the API key has been validated
+        last_validated_at: When the API key was last validated
+        validation_error: Error message if validation failed
+        config: Additional configuration (JSONB)
         created_at: Record creation timestamp
         updated_at: Last update timestamp
     
@@ -116,6 +127,9 @@ class Integration(Base, UUIDMixin, TimestampMixin):
     """
     
     __tablename__ = "integrations"
+    
+    # Primary Key
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
     
     # Foreign Key
     user_id = Column(
@@ -126,24 +140,29 @@ class Integration(Base, UUIDMixin, TimestampMixin):
         doc="Foreign key to user"
     )
     
-    # Provider
+    # Provider info
     provider = Column(
-        Enum(IntegrationProvider),
+        String(50),
         nullable=False,
         index=True,
         doc="Integration provider"
+    )
+    category = Column(
+        String(20),
+        nullable=False,
+        doc="Integration category"
     )
     
     # Encrypted Credentials
     api_key_encrypted = Column(
         Text,
-        nullable=True,
+        nullable=False,
         doc="Encrypted API key"
     )
-    oauth_data_encrypted = Column(
-        Text,
-        nullable=True,
-        doc="Encrypted OAuth data (JSON)"
+    api_key_masked = Column(
+        String(50),
+        nullable=False,
+        doc="Masked API key for display"
     )
     
     # Status
@@ -153,71 +172,77 @@ class Integration(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         doc="Whether the integration is active"
     )
-    is_validated = Column(
+    is_valid = Column(
         Boolean,
         default=False,
         nullable=False,
         doc="Whether the API key has been validated"
     )
-    validated_at = Column(
-        DateTime,
+    last_validated_at = Column(
+        DateTime(timezone=True),
         nullable=True,
         doc="When the API key was last validated"
     )
-    last_used_at = Column(
-        DateTime,
-        nullable=True,
-        doc="When the integration was last used"
-    )
-    error_message = Column(
+    validation_error = Column(
         Text,
         nullable=True,
-        doc="Last error message if validation failed"
+        doc="Error message if validation failed"
+    )
+    
+    # Additional config
+    config = Column(
+        JSONB,
+        nullable=True,
+        doc="Additional configuration"
+    )
+    
+    # Timestamps
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Creation timestamp"
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Last update timestamp"
     )
     
     # Relationship
     user = relationship("User", back_populates="integrations")
     
-    # Unique constraint: one provider per user
-    __table_args__ = (
-        # Each user can only have one integration per provider
-        {"sqlite_autoincrement": True},
-    )
-    
     def __repr__(self) -> str:
         return f"<Integration(id={self.id}, user_id={self.user_id}, provider={self.provider})>"
     
     @property
-    def category(self) -> IntegrationCategory:
-        """Get the category for this integration's provider."""
-        return PROVIDER_CATEGORIES.get(self.provider, IntegrationCategory.SCRIPT)
+    def is_validated(self) -> bool:
+        """Alias for is_valid for backwards compatibility."""
+        return self.is_valid
+    
+    @property
+    def validated_at(self) -> Optional[datetime]:
+        """Alias for last_validated_at for backwards compatibility."""
+        return self.last_validated_at
+    
+    @property
+    def error_message(self) -> Optional[str]:
+        """Alias for validation_error for backwards compatibility."""
+        return self.validation_error
     
     @property
     def requires_api_key(self) -> bool:
         """Check if this provider requires an API key."""
-        # FFmpeg doesn't require an API key (it's local)
-        return self.provider != IntegrationProvider.FFMPEG
+        return self.provider != "ffmpeg"
     
-    @property
-    def supports_oauth(self) -> bool:
-        """Check if this provider supports OAuth authentication."""
-        # Currently, most providers use API keys
-        # This can be expanded when OAuth support is added
-        return False
-    
-    def mark_used(self) -> None:
-        """Update the last_used_at timestamp."""
-        self.last_used_at = datetime.utcnow()
-    
-    def mark_validated(self, success: bool, error_message: Optional[str] = None) -> None:
-        """
-        Update validation status.
-        
-        Args:
-            success: Whether validation was successful
-            error_message: Error message if validation failed
-        """
-        self.is_validated = success
-        self.validated_at = datetime.utcnow()
-        self.error_message = error_message if not success else None
-
+    def to_response(self) -> Dict[str, Any]:
+        """Convert to response format."""
+        return {
+            "id": str(self.id),
+            "provider": self.provider,
+            "category": self.category,
+            "api_key_masked": self.api_key_masked,
+            "is_active": self.is_active,
+            "is_valid": self.is_valid,
+            "last_validated": str(self.last_validated_at) if self.last_validated_at else None,
+            "created_at": str(self.created_at) if self.created_at else None,
+        }
