@@ -11,17 +11,6 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.common import BaseSchema, IDSchema, TimestampSchema
-from app.models.template import (
-    TemplateCategory,
-    AspectRatio,
-    HookStyle,
-    NarrativeStructure,
-    Pacing,
-    VisualAesthetic,
-    VoiceTone,
-    MusicMood,
-    CTAType,
-)
 
 
 # =============================================================================
@@ -31,57 +20,55 @@ from app.models.template import (
 class VideoStructureConfig(BaseSchema):
     """Video structure configuration."""
     
-    hook_style: HookStyle = HookStyle.QUESTION
-    narrative_structure: NarrativeStructure = NarrativeStructure.HOOK_PROBLEM_SOLUTION_CTA
-    num_scenes: int = Field(default=5, ge=1, le=20)
-    duration_min: int = Field(default=15, ge=5, le=600)
-    duration_max: int = Field(default=60, ge=5, le=600)
-    pacing: Pacing = Pacing.MEDIUM
+    hook_style: str = "question"
+    narrative_structure: str = "hook_story_payoff"
+    duration_seconds: int = Field(default=60, ge=5, le=600)
+    aspect_ratio: str = "9:16"
+    segments: Optional[List[Dict[str, Any]]] = None
 
 
 class VisualStyleConfig(BaseSchema):
     """Visual style configuration."""
     
-    aspect_ratio: AspectRatio = AspectRatio.VERTICAL
-    color_palette: Dict[str, str] = Field(default_factory=dict)
-    visual_aesthetic: VisualAesthetic = VisualAesthetic.CINEMATIC
-    transitions: str = "cut"
-    filter_mood: str = "neutral"
-
-
-class TextCaptionsConfig(BaseSchema):
-    """Text and captions configuration."""
-    
-    caption_style: str = "bold_popup"
-    font_style: str = "modern"
-    text_position: str = "bottom"
-    hook_text_overlay: bool = True
+    color_scheme: str = "modern"
+    font_family: str = "Inter"
+    transition_style: str = "cut"
+    overlay_style: str = "minimal"
 
 
 class AudioConfig(BaseSchema):
     """Audio configuration."""
     
-    voice_gender: str = "neutral"
-    voice_tone: VoiceTone = VoiceTone.PROFESSIONAL
-    voice_speed: str = "normal"
-    music_mood: MusicMood = MusicMood.UPBEAT
+    voice_style: str = "professional"
+    background_music_genre: str = "upbeat"
     sound_effects: bool = True
 
 
 class ScriptPromptConfig(BaseSchema):
     """Script/prompt configuration."""
     
-    script_structure_prompt: Optional[str] = None
-    tone_instructions: Optional[str] = None
-    cta_type: CTAType = CTAType.FOLLOW
-    cta_placement: str = "end"
+    tone: str = "professional"
+    hook_style: str = "question"
+    call_to_action: str = "Follow for more"
+    content_structure: List[str] = Field(default=["hook", "problem", "solution", "cta"])
 
 
 class PlatformOptimizationConfig(BaseSchema):
     """Platform optimization configuration."""
     
-    thumbnail_style: str = "title_overlay"
-    suggested_hashtags: List[str] = Field(default_factory=list)
+    primary_platform: str = "tiktok"
+    hashtag_strategy: str = "trending"
+    caption_style: str = "engaging"
+
+
+class TemplateConfigSchema(BaseSchema):
+    """Full template configuration."""
+    
+    video_structure: Optional[VideoStructureConfig] = None
+    visual_style: Optional[VisualStyleConfig] = None
+    audio: Optional[AudioConfig] = None
+    script_prompt: Optional[ScriptPromptConfig] = None
+    platform_optimization: Optional[PlatformOptimizationConfig] = None
 
 
 # =============================================================================
@@ -93,21 +80,10 @@ class TemplateCreate(BaseSchema):
     
     name: str = Field(min_length=1, max_length=255, description="Template name")
     description: Optional[str] = Field(default=None, description="Template description")
-    category: TemplateCategory = TemplateCategory.GENERAL
-    target_platforms: List[str] = Field(default_factory=list)
+    category: str = "general"
     tags: List[str] = Field(default_factory=list)
-    
-    # Nested configs
-    video_structure: Optional[VideoStructureConfig] = None
-    visual_style: Optional[VisualStyleConfig] = None
-    text_captions: Optional[TextCaptionsConfig] = None
-    audio: Optional[AudioConfig] = None
-    script_prompt: Optional[ScriptPromptConfig] = None
-    platform_optimization: Optional[PlatformOptimizationConfig] = None
-    
-    # For system templates (admin only)
-    is_system: bool = False
     is_public: bool = False
+    config: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
 class TemplateUpdate(BaseSchema):
@@ -115,19 +91,10 @@ class TemplateUpdate(BaseSchema):
     
     name: Optional[str] = Field(default=None, max_length=255)
     description: Optional[str] = None
-    category: Optional[TemplateCategory] = None
-    target_platforms: Optional[List[str]] = None
+    category: Optional[str] = None
     tags: Optional[List[str]] = None
-    
-    # Nested configs
-    video_structure: Optional[VideoStructureConfig] = None
-    visual_style: Optional[VisualStyleConfig] = None
-    text_captions: Optional[TextCaptionsConfig] = None
-    audio: Optional[AudioConfig] = None
-    script_prompt: Optional[ScriptPromptConfig] = None
-    platform_optimization: Optional[PlatformOptimizationConfig] = None
-    
     is_public: Optional[bool] = None
+    config: Optional[Dict[str, Any]] = None
 
 
 # =============================================================================
@@ -140,26 +107,14 @@ class TemplateResponse(IDSchema, TimestampSchema):
     user_id: Optional[UUID] = None
     name: str
     description: Optional[str] = None
-    category: TemplateCategory
-    target_platforms: List[str]
-    tags: List[str]
-    
-    # Flattened config (for simplicity in response)
-    hook_style: HookStyle
-    narrative_structure: NarrativeStructure
-    num_scenes: int
-    duration_min: int
-    duration_max: int
-    pacing: Pacing
-    aspect_ratio: AspectRatio
-    visual_aesthetic: VisualAesthetic
-    voice_tone: VoiceTone
-    music_mood: MusicMood
-    cta_type: CTAType
-    
+    category: str
+    tags: List[str] = Field(default_factory=list)
     is_system: bool
     is_public: bool
-    version: int
+    is_premium: bool = False
+    is_featured: bool = False
+    use_count: int = 0
+    config: Dict[str, Any] = Field(default_factory=dict)
 
 
 class TemplateListItem(IDSchema):
@@ -167,12 +122,14 @@ class TemplateListItem(IDSchema):
     
     name: str
     description: Optional[str] = None
-    category: TemplateCategory
-    target_platforms: List[str]
+    category: str
+    tags: List[str] = Field(default_factory=list)
     is_system: bool
     is_public: bool
-    version: int
-    created_at: datetime
+    is_premium: bool = False
+    is_featured: bool = False
+    use_count: int = 0
+    created_at: Optional[datetime] = None
 
 
 class TemplateListResponse(BaseSchema):
@@ -190,4 +147,3 @@ class TemplateConfigResponse(BaseSchema):
     id: UUID
     name: str
     config: Dict[str, Any] = Field(description="Full template configuration")
-

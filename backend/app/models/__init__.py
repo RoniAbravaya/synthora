@@ -13,18 +13,7 @@ from app.models.integration import (
     IntegrationCategory,
     PROVIDER_CATEGORIES,
 )
-from app.models.template import (
-    Template,
-    TemplateCategory,
-    AspectRatio,
-    HookStyle,
-    NarrativeStructure,
-    Pacing,
-    VisualAesthetic,
-    VoiceTone,
-    MusicMood,
-    CTAType,
-)
+from app.models.template import Template, TemplateCategory
 from app.models.video import Video, VideoStatus, GenerationStep
 from app.models.social_account import SocialAccount, SocialPlatform
 from app.models.post import Post, PostStatus
@@ -54,14 +43,6 @@ __all__ = [
     # Template
     "Template",
     "TemplateCategory",
-    "AspectRatio",
-    "HookStyle",
-    "NarrativeStructure",
-    "Pacing",
-    "VisualAesthetic",
-    "VoiceTone",
-    "MusicMood",
-    "CTAType",
     
     # Video
     "Video",

@@ -7,26 +7,14 @@ Templates define the structure, style, and configuration for video generation.
 
 import logging
 from typing import Optional, List, Dict, Any
-from datetime import datetime
 from uuid import UUID
 import copy
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import or_
 
-from app.models.template import (
-    Template,
-    TemplateCategory,
-    AspectRatio,
-    HookStyle,
-    NarrativeStructure,
-    Pacing,
-    VisualAesthetic,
-    VoiceTone,
-    MusicMood,
-    CTAType,
-)
-from app.models.user import User, UserRole
+from app.models.template import Template, TemplateCategory
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +51,10 @@ class TemplateService:
         """
         Get all system templates.
         
-        System templates are created by admins and available to all users.
+        System templates have user_id = NULL.
         """
         return self.db.query(Template).filter(
-            Template.is_system == True
+            Template.user_id == None
         ).order_by(Template.name).all()
     
     def get_user_templates(self, user_id: UUID) -> List[Template]:
@@ -80,17 +68,13 @@ class TemplateService:
             List of user's personal templates
         """
         return self.db.query(Template).filter(
-            and_(
-                Template.user_id == user_id,
-                Template.is_system == False,
-            )
-        ).order_by(Template.updated_at.desc()).all()
+            Template.user_id == user_id
+        ).order_by(Template.name).all()
     
     def get_accessible_templates(
         self,
         user_id: UUID,
-        category: Optional[TemplateCategory] = None,
-        platform: Optional[str] = None,
+        category: Optional[str] = None,
         search: Optional[str] = None,
         skip: int = 0,
         limit: int = 20,
@@ -99,14 +83,13 @@ class TemplateService:
         Get all templates accessible to a user.
         
         This includes:
-        - System templates
+        - System templates (user_id is NULL)
         - User's personal templates
         - Public templates from other users
         
         Args:
             user_id: User's UUID
             category: Filter by category
-            platform: Filter by target platform
             search: Search in name and description
             skip: Pagination offset
             limit: Pagination limit
@@ -117,18 +100,15 @@ class TemplateService:
         # Base query: system templates OR user's templates OR public templates
         query = self.db.query(Template).filter(
             or_(
-                Template.is_system == True,
-                Template.user_id == user_id,
-                Template.is_public == True,
+                Template.user_id == None,  # System templates
+                Template.user_id == user_id,  # User's templates
+                Template.is_public == True,  # Public templates
             )
         )
         
         # Apply filters
         if category:
             query = query.filter(Template.category == category)
-        
-        if platform:
-            query = query.filter(Template.target_platforms.contains([platform]))
         
         if search:
             search_term = f"%{search}%"
@@ -142,10 +122,10 @@ class TemplateService:
         # Get total count
         total = query.count()
         
-        # Order: system templates first, then by updated_at
+        # Order: system templates first (user_id is NULL), then by name
         query = query.order_by(
-            Template.is_system.desc(),
-            Template.updated_at.desc(),
+            Template.user_id.is_(None).desc(),
+            Template.name,
         )
         
         # Apply pagination
@@ -165,7 +145,7 @@ class TemplateService:
             True if user can access the template
         """
         # System templates are accessible to all
-        if template.is_system:
+        if template.user_id is None:
             return True
         
         # User's own templates
@@ -190,8 +170,8 @@ class TemplateService:
             True if user can edit the template
         """
         # Admins can edit system templates
-        if template.is_system:
-            return user.role == UserRole.ADMIN
+        if template.user_id is None:
+            return user.is_admin
         
         # Users can only edit their own templates
         return template.user_id == user.id
@@ -205,10 +185,10 @@ class TemplateService:
         user_id: Optional[UUID],
         name: str,
         description: Optional[str] = None,
-        category: TemplateCategory = TemplateCategory.GENERAL,
-        is_system: bool = False,
+        category: str = "general",
         is_public: bool = False,
-        **config_kwargs,
+        config: Optional[Dict[str, Any]] = None,
+        tags: Optional[List[str]] = None,
     ) -> Template:
         """
         Create a new template.
@@ -218,9 +198,9 @@ class TemplateService:
             name: Template name
             description: Template description
             category: Template category
-            is_system: Whether this is a system template
             is_public: Whether this template is public
-            **config_kwargs: Additional template configuration
+            config: Template configuration (JSONB)
+            tags: Template tags
             
         Returns:
             Newly created Template instance
@@ -230,9 +210,9 @@ class TemplateService:
             name=name,
             description=description,
             category=category,
-            is_system=is_system,
             is_public=is_public,
-            **config_kwargs,
+            config=config or {},
+            tags=tags or [],
         )
         
         self.db.add(template)
@@ -262,13 +242,10 @@ class TemplateService:
             if value is not None and hasattr(template, key):
                 setattr(template, key, value)
         
-        # Increment version
-        template.version += 1
-        
         self.db.commit()
         self.db.refresh(template)
         
-        logger.info(f"Updated template: {template.name} (v{template.version})")
+        logger.info(f"Updated template: {template.name}")
         return template
     
     def delete_template(self, template: Template) -> None:
@@ -295,7 +272,7 @@ class TemplateService:
         """
         Duplicate a template for a user.
         
-        Creates a personal copy of a template (system or another user's public template).
+        Creates a personal copy of a template.
         
         Args:
             template: Template to duplicate
@@ -311,51 +288,9 @@ class TemplateService:
             name=new_name or f"{template.name} (Copy)",
             description=template.description,
             category=template.category,
-            target_platforms=template.target_platforms.copy() if template.target_platforms else [],
-            tags=template.tags.copy() if template.tags else [],
-            
-            # Video Structure
-            hook_style=template.hook_style,
-            narrative_structure=template.narrative_structure,
-            num_scenes=template.num_scenes,
-            duration_min=template.duration_min,
-            duration_max=template.duration_max,
-            pacing=template.pacing,
-            
-            # Visual Style
-            aspect_ratio=template.aspect_ratio,
-            color_palette=copy.deepcopy(template.color_palette) if template.color_palette else {},
-            visual_aesthetic=template.visual_aesthetic,
-            transitions=template.transitions,
-            filter_mood=template.filter_mood,
-            
-            # Text & Captions
-            caption_style=template.caption_style,
-            font_style=template.font_style,
-            text_position=template.text_position,
-            hook_text_overlay=template.hook_text_overlay,
-            
-            # Audio
-            voice_gender=template.voice_gender,
-            voice_tone=template.voice_tone,
-            voice_speed=template.voice_speed,
-            music_mood=template.music_mood,
-            sound_effects=template.sound_effects,
-            
-            # Script/Prompt
-            script_structure_prompt=template.script_structure_prompt,
-            tone_instructions=template.tone_instructions,
-            cta_type=template.cta_type,
-            cta_placement=template.cta_placement,
-            
-            # Platform Optimization
-            thumbnail_style=template.thumbnail_style,
-            suggested_hashtags=template.suggested_hashtags.copy() if template.suggested_hashtags else [],
-            
-            # Ownership
-            is_system=False,
             is_public=False,
-            version=1,
+            config=copy.deepcopy(template.config) if template.config else {},
+            tags=template.tags.copy() if template.tags else [],
         )
         
         self.db.add(new_template)
@@ -376,92 +311,13 @@ class TemplateService:
         """
         Get the full configuration for a template.
         
-        This returns a dictionary suitable for passing to the
-        video generation pipeline.
-        
         Args:
             template: Template to export
             
         Returns:
             Dictionary with full template configuration
         """
-        return template.to_config_dict()
-    
-    def apply_config_to_template(
-        self,
-        template: Template,
-        config: Dict[str, Any],
-    ) -> Template:
-        """
-        Apply a configuration dictionary to a template.
-        
-        Args:
-            template: Template to update
-            config: Configuration dictionary
-            
-        Returns:
-            Updated Template instance
-        """
-        # Video structure
-        video_structure = config.get("video_structure", {})
-        if video_structure:
-            if "hook_style" in video_structure:
-                template.hook_style = HookStyle(video_structure["hook_style"])
-            if "narrative_structure" in video_structure:
-                template.narrative_structure = NarrativeStructure(video_structure["narrative_structure"])
-            if "num_scenes" in video_structure:
-                template.num_scenes = video_structure["num_scenes"]
-            if "duration_range" in video_structure:
-                template.duration_min = video_structure["duration_range"].get("min", template.duration_min)
-                template.duration_max = video_structure["duration_range"].get("max", template.duration_max)
-            if "pacing" in video_structure:
-                template.pacing = Pacing(video_structure["pacing"])
-        
-        # Visual style
-        visual_style = config.get("visual_style", {})
-        if visual_style:
-            if "aspect_ratio" in visual_style:
-                template.aspect_ratio = AspectRatio(visual_style["aspect_ratio"])
-            if "color_palette" in visual_style:
-                template.color_palette = visual_style["color_palette"]
-            if "visual_aesthetic" in visual_style:
-                template.visual_aesthetic = VisualAesthetic(visual_style["visual_aesthetic"])
-            if "transitions" in visual_style:
-                template.transitions = visual_style["transitions"]
-            if "filter_mood" in visual_style:
-                template.filter_mood = visual_style["filter_mood"]
-        
-        # Audio
-        audio = config.get("audio", {})
-        if audio:
-            if "voice_gender" in audio:
-                template.voice_gender = audio["voice_gender"]
-            if "voice_tone" in audio:
-                template.voice_tone = VoiceTone(audio["voice_tone"])
-            if "voice_speed" in audio:
-                template.voice_speed = audio["voice_speed"]
-            if "music_mood" in audio:
-                template.music_mood = MusicMood(audio["music_mood"])
-            if "sound_effects" in audio:
-                template.sound_effects = audio["sound_effects"]
-        
-        # Script prompt
-        script_prompt = config.get("script_prompt", {})
-        if script_prompt:
-            if "structure_prompt" in script_prompt:
-                template.script_structure_prompt = script_prompt["structure_prompt"]
-            if "tone_instructions" in script_prompt:
-                template.tone_instructions = script_prompt["tone_instructions"]
-            if "cta_type" in script_prompt:
-                template.cta_type = CTAType(script_prompt["cta_type"])
-            if "cta_placement" in script_prompt:
-                template.cta_placement = script_prompt["cta_placement"]
-        
-        template.version += 1
-        self.db.commit()
-        self.db.refresh(template)
-        
-        return template
+        return template.config or {}
     
     # =========================================================================
     # Statistics
@@ -475,23 +331,15 @@ class TemplateService:
             Dictionary with template statistics
         """
         total = self.db.query(Template).count()
-        system_count = self.db.query(Template).filter(Template.is_system == True).count()
-        
-        # Count by category
-        by_category = {}
-        for category in TemplateCategory:
-            count = self.db.query(Template).filter(Template.category == category).count()
-            by_category[category.value] = count
+        system_count = self.db.query(Template).filter(Template.user_id == None).count()
         
         return {
             "total": total,
             "system_templates": system_count,
             "user_templates": total - system_count,
-            "by_category": by_category,
         }
 
 
 def get_template_service(db: Session) -> TemplateService:
     """Factory function to create a TemplateService instance."""
     return TemplateService(db)
-
