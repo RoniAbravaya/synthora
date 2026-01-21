@@ -18,7 +18,7 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import our models and database configuration
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.database import Base
 
 # Import all models to ensure they're registered with SQLAlchemy

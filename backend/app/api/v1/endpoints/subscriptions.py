@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.auth import get_current_active_user, require_admin
 from app.models.user import User, UserRole
 from app.models.subscription import SubscriptionPlan

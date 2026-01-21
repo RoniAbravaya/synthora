@@ -13,7 +13,7 @@ from calendar import monthrange
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
-from app.models.post import Post, PostStatus, PostPlatformStatus
+from app.models.post import Post, PostStatus
 from app.models.video import Video, VideoStatus
 from app.models.social_account import SocialAccount, SocialPlatform
 from app.models.user import User

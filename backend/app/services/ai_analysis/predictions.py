@@ -18,7 +18,7 @@ from app.models.post import Post, PostStatus
 from app.models.analytics import Analytics
 from app.models.template import Template
 from app.services.suggestions import SuggestionsService
-from app.models.ai_suggestion import SuggestionType, SuggestionPriority
+from app.models.ai_suggestion import SuggestionType
 
 logger = logging.getLogger(__name__)
 

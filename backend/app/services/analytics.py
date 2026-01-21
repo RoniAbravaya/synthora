@@ -13,7 +13,7 @@ from collections import defaultdict
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 
-from app.models.analytics import Analytics, AnalyticsPlatform
+from app.models.analytics import Analytics
 from app.models.post import Post, PostStatus
 from app.models.video import Video
 from app.models.social_account import SocialAccount, SocialPlatform
@@ -49,7 +49,7 @@ class AnalyticsService:
     def get_post_analytics(
         self,
         post_id: UUID,
-        platform: Optional[AnalyticsPlatform] = None,
+        platform: Optional[SocialPlatform] = None,
     ) -> List[Analytics]:
         """
         Get analytics for a specific post.
@@ -71,7 +71,7 @@ class AnalyticsService:
     def get_latest_post_analytics(
         self,
         post_id: UUID,
-        platform: AnalyticsPlatform,
+        platform: SocialPlatform,
     ) -> Optional[Analytics]:
         """Get the most recent analytics for a post on a platform."""
         return self.db.query(Analytics).filter(
@@ -114,7 +114,7 @@ class AnalyticsService:
         # Get latest analytics for each post/platform
         analytics_data = []
         for post_id in post_ids:
-            for platform in AnalyticsPlatform:
+            for platform in SocialPlatform:
                 latest = self.get_latest_post_analytics(post_id, platform)
                 if latest:
                     analytics_data.append(latest)
@@ -174,7 +174,7 @@ class AnalyticsService:
         user_id: UUID,
         metric: str,
         days: int = 30,
-        platform: Optional[AnalyticsPlatform] = None,
+        platform: Optional[SocialPlatform] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get time-series data for a metric.
@@ -229,7 +229,7 @@ class AnalyticsService:
         user_id: UUID,
         metric: str = "views",
         limit: int = 10,
-        platform: Optional[AnalyticsPlatform] = None,
+        platform: Optional[SocialPlatform] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get top performing posts by a metric.
@@ -381,7 +381,7 @@ class AnalyticsService:
     def store_analytics(
         self,
         post_id: UUID,
-        platform: AnalyticsPlatform,
+        platform: SocialPlatform,
         platform_post_id: str,
         views: int = 0,
         likes: int = 0,

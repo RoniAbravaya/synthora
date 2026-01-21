@@ -13,14 +13,16 @@ from enum import Enum
 from sqlalchemy.orm import Session
 import stripe
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.models.user import User, UserRole
 from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionPlan
 
 logger = logging.getLogger(__name__)
 
-# Initialize Stripe
-stripe.api_key = settings.STRIPE_SECRET_KEY
+# Initialize Stripe with settings
+_settings = get_settings()
+if _settings.STRIPE_SECRET_KEY:
+    stripe.api_key = _settings.STRIPE_SECRET_KEY
 
 
 class StripeService:
@@ -37,8 +39,8 @@ class StripeService:
     # Price IDs from Stripe Dashboard
     # These should be configured in environment variables
     PRICE_IDS = {
-        SubscriptionPlan.MONTHLY: settings.STRIPE_MONTHLY_PRICE_ID,
-        SubscriptionPlan.ANNUAL: settings.STRIPE_ANNUAL_PRICE_ID,
+        SubscriptionPlan.MONTHLY: _settings.STRIPE_MONTHLY_PRICE_ID,
+        SubscriptionPlan.ANNUAL: _settings.STRIPE_ANNUAL_PRICE_ID,
     }
     
     def __init__(self, db: Session):

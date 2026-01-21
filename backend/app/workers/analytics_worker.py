@@ -13,10 +13,10 @@ from sqlalchemy.orm import Session
 from rq import get_current_job
 
 from app.core.database import SessionLocal
-from app.core.security import decrypt_token
+from app.core.security import decrypt_value
 from app.models.post import Post, PostStatus
 from app.models.social_account import SocialAccount, SocialPlatform
-from app.models.analytics import Analytics, AnalyticsPlatform
+from app.models.analytics import Analytics
 from app.services.analytics import AnalyticsService
 from app.services.analytics_fetchers import get_fetcher
 
@@ -27,12 +27,7 @@ logger = logging.getLogger(__name__)
 # Platform Mapping
 # =========================================================================
 
-SOCIAL_TO_ANALYTICS_PLATFORM = {
-    SocialPlatform.YOUTUBE: AnalyticsPlatform.YOUTUBE,
-    SocialPlatform.TIKTOK: AnalyticsPlatform.TIKTOK,
-    SocialPlatform.INSTAGRAM: AnalyticsPlatform.INSTAGRAM,
-    SocialPlatform.FACEBOOK: AnalyticsPlatform.FACEBOOK,
-}
+# Platform mapping is now unified - SocialPlatform is used everywhere
 
 
 # =========================================================================
@@ -86,10 +81,10 @@ def sync_post_analytics_job(post_id: str) -> dict:
                     continue
                 
                 # Decrypt access token
-                access_token = decrypt_token(social_account.access_token_encrypted)
+                access_token = decrypt_value(social_account.access_token_encrypted)
                 refresh_token = None
                 if social_account.refresh_token_encrypted:
-                    refresh_token = decrypt_token(social_account.refresh_token_encrypted)
+                    refresh_token = decrypt_value(social_account.refresh_token_encrypted)
                 
                 # Get fetcher
                 fetcher_class = get_fetcher(platform_name)
@@ -292,10 +287,10 @@ def sync_channel_analytics_job(user_id: str) -> dict:
                 platform_name = account.platform.value
                 
                 # Decrypt tokens
-                access_token = decrypt_token(account.access_token_encrypted)
+                access_token = decrypt_value(account.access_token_encrypted)
                 refresh_token = None
                 if account.refresh_token_encrypted:
-                    refresh_token = decrypt_token(account.refresh_token_encrypted)
+                    refresh_token = decrypt_value(account.refresh_token_encrypted)
                 
                 # Get fetcher
                 fetcher_class = get_fetcher(platform_name)
@@ -349,7 +344,7 @@ def queue_analytics_sync(post_id: UUID, queue_name: str = "analytics") -> Option
     try:
         from redis import Redis
         from rq import Queue
-        from app.core.config import settings
+        from app.core.config import get_settings
         
         redis_conn = Redis.from_url(settings.REDIS_URL)
         queue = Queue(queue_name, connection=redis_conn)
@@ -381,7 +376,7 @@ def queue_user_analytics_sync(user_id: UUID, queue_name: str = "analytics") -> O
     try:
         from redis import Redis
         from rq import Queue
-        from app.core.config import settings
+        from app.core.config import get_settings
         
         redis_conn = Redis.from_url(settings.REDIS_URL)
         queue = Queue(queue_name, connection=redis_conn)

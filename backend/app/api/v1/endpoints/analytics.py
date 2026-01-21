@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.auth import get_current_active_user, require_premium
 from app.models.user import User
-from app.models.analytics import AnalyticsPlatform
+from app.models.social_account import SocialPlatform
 from app.services.analytics import AnalyticsService
 from app.workers.analytics_worker import (
     queue_analytics_sync,
@@ -127,7 +127,7 @@ async def get_time_series(
     analytics_platform = None
     if platform:
         try:
-            analytics_platform = AnalyticsPlatform(platform.lower())
+            analytics_platform = SocialPlatform(platform.lower())
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -177,7 +177,7 @@ async def get_top_performing(
     analytics_platform = None
     if platform:
         try:
-            analytics_platform = AnalyticsPlatform(platform.lower())
+            analytics_platform = SocialPlatform(platform.lower())
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

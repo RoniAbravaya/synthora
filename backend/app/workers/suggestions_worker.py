@@ -370,7 +370,7 @@ def queue_suggestions_generation(user_id: UUID, queue_name: str = "suggestions")
     try:
         from redis import Redis
         from rq import Queue
-        from app.core.config import settings
+        from app.core.config import get_settings
         
         redis_conn = Redis.from_url(settings.REDIS_URL)
         queue = Queue(queue_name, connection=redis_conn)

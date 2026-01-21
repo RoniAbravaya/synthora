@@ -37,6 +37,15 @@ class SuggestionType(str, enum.Enum):
     IMPROVEMENT = "improvement"
 
 
+class SuggestionPriority(str, enum.Enum):
+    """
+    Priority levels for AI suggestions.
+    """
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 class AISuggestion(Base, UUIDMixin, TimestampMixin):
     """
     AI Suggestion model for storing AI-generated recommendations.

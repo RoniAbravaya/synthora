@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional
 import httpx
 
 from app.services.analytics_fetchers.base import BaseFetcher, FetchResult
-from app.core.config import settings
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +203,7 @@ class InstagramAnalyticsFetcher(BaseFetcher):
             return None
         
         try:
+            settings = get_settings()
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     f"{self.API_BASE}/oauth/access_token",

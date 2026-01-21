@@ -12,14 +12,16 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 import stripe
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.models.user import User, UserRole
 from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionPlan
 
 logger = logging.getLogger(__name__)
 
-# Initialize Stripe
-stripe.api_key = settings.STRIPE_SECRET_KEY
+# Initialize Stripe with settings
+_settings = get_settings()
+if _settings.STRIPE_SECRET_KEY:
+    stripe.api_key = _settings.STRIPE_SECRET_KEY
 
 
 class StripeWebhookHandler:
@@ -60,7 +62,7 @@ class StripeWebhookHandler:
             event = stripe.Webhook.construct_event(
                 payload,
                 signature,
-                settings.STRIPE_WEBHOOK_SECRET,
+                _settings.STRIPE_WEBHOOK_SECRET,
             )
             return event
         except stripe.error.SignatureVerificationError as e:

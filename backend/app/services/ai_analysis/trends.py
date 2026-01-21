@@ -13,9 +13,9 @@ import json
 from sqlalchemy.orm import Session
 import httpx
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.services.suggestions import SuggestionsService
-from app.models.ai_suggestion import SuggestionType, SuggestionPriority
+from app.models.ai_suggestion import SuggestionType
 
 logger = logging.getLogger(__name__)
 

@@ -45,6 +45,15 @@ class NotificationType(str, enum.Enum):
     SYSTEM = "system"
 
 
+class NotificationPriority(str, enum.Enum):
+    """
+    Priority levels for notifications.
+    """
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 class Notification(Base, UUIDMixin, TimestampMixin):
     """
     Notification model for in-app notifications.
