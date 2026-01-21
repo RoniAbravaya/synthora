@@ -1,0 +1,55 @@
+Generic single-database configuration for Alembic.
+
+# Synthora Database Migrations
+
+This directory contains Alembic database migrations for the Synthora application.
+
+## Quick Reference
+
+### Generate a new migration
+```bash
+alembic revision --autogenerate -m "Description of changes"
+```
+
+### Apply all pending migrations
+```bash
+alembic upgrade head
+```
+
+### Rollback one migration
+```bash
+alembic downgrade -1
+```
+
+### View current migration status
+```bash
+alembic current
+```
+
+### View migration history
+```bash
+alembic history
+```
+
+## Development Workflow
+
+1. Make changes to SQLAlchemy models in `app/models/`
+2. Generate a new migration:
+   ```bash
+   alembic revision --autogenerate -m "Add user profile fields"
+   ```
+3. Review the generated migration in `alembic/versions/`
+4. Apply the migration:
+   ```bash
+   alembic upgrade head
+   ```
+
+## Production Deployment
+
+Migrations are automatically applied during Railway deployment via:
+```bash
+alembic upgrade head
+```
+
+This is configured in the Railway startup sequence.
+
