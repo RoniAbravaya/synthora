@@ -8,7 +8,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Boolean
+from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 class SubscriptionPlan(str, enum.Enum):
     """Subscription plan types."""
+    FREE = "free"
     MONTHLY = "monthly"
     ANNUAL = "annual"
 
@@ -47,13 +48,15 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
     """
     Subscription model for tracking Stripe subscriptions.
     
+    This model matches the database schema from migration 001_initial_schema.
+    
     Attributes:
         id: Unique identifier (UUID)
         user_id: Foreign key to user
-        stripe_customer_id: Stripe customer ID
-        stripe_subscription_id: Stripe subscription ID
-        plan: Subscription plan (monthly/annual)
+        plan: Subscription plan (free/monthly/annual)
         status: Current subscription status
+        stripe_subscription_id: Stripe subscription ID
+        stripe_price_id: Stripe price ID
         current_period_start: Start of current billing period
         current_period_end: End of current billing period
         cancel_at_period_end: Whether subscription cancels at period end
@@ -77,13 +80,22 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
         doc="Foreign key to user"
     )
     
-    # Stripe IDs
-    stripe_customer_id = Column(
-        String(255),
+    # Plan Details - stored as strings in DB
+    plan = Column(
+        String(20),
+        nullable=False,
+        default="free",
+        doc="Subscription plan type"
+    )
+    status = Column(
+        String(20),
+        default="active",
         nullable=False,
         index=True,
-        doc="Stripe customer ID"
+        doc="Current subscription status"
     )
+    
+    # Stripe IDs
     stripe_subscription_id = Column(
         String(255),
         nullable=True,
@@ -91,29 +103,20 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
         index=True,
         doc="Stripe subscription ID"
     )
-    
-    # Plan Details
-    plan = Column(
-        Enum(SubscriptionPlan),
-        nullable=False,
-        doc="Subscription plan type"
-    )
-    status = Column(
-        Enum(SubscriptionStatus),
-        default=SubscriptionStatus.ACTIVE,
-        nullable=False,
-        index=True,
-        doc="Current subscription status"
+    stripe_price_id = Column(
+        String(255),
+        nullable=True,
+        doc="Stripe price ID"
     )
     
     # Billing Period
     current_period_start = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         doc="Start of current billing period"
     )
     current_period_end = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         doc="End of current billing period"
     )
@@ -126,7 +129,7 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
         doc="Whether subscription cancels at period end"
     )
     canceled_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         doc="When the subscription was canceled"
     )
@@ -140,7 +143,7 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
     @property
     def is_active(self) -> bool:
         """Check if subscription is currently active."""
-        return self.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING)
+        return self.status in ("active", "trialing")
     
     @property
     def is_valid(self) -> bool:
@@ -148,11 +151,7 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
         Check if subscription is valid (active or in grace period).
         Users with past_due status still have access during grace period.
         """
-        return self.status in (
-            SubscriptionStatus.ACTIVE,
-            SubscriptionStatus.TRIALING,
-            SubscriptionStatus.PAST_DUE
-        )
+        return self.status in ("active", "trialing", "past_due")
     
     @property
     def days_until_renewal(self) -> Optional[int]:
@@ -165,9 +164,8 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
     @property
     def price(self) -> float:
         """Get the price for this plan."""
-        if self.plan == SubscriptionPlan.MONTHLY:
+        if self.plan == "monthly":
             return 5.00
-        elif self.plan == SubscriptionPlan.ANNUAL:
+        elif self.plan == "annual":
             return 50.00
         return 0.00
-
