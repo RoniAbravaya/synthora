@@ -340,7 +340,10 @@ class IntegrationService:
             api_key = self.get_decrypted_api_key(integration)
             if len(api_key) <= 4:
                 return "****"
-            return f"{'*' * (len(api_key) - 4)}{api_key[-4:]}"
+            # Limit to 50 chars max to fit database column
+            visible_chars = api_key[-4:]
+            mask_len = min(len(api_key) - 4, 46)  # 46 asterisks + 4 visible = 50 max
+            return f"{'*' * mask_len}{visible_chars}"
         except Exception:
             return "Error decrypting"
     

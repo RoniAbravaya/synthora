@@ -44,10 +44,13 @@ class IntegrationUpdateRequest(BaseModel):
 # =============================================================================
 
 def mask_api_key(api_key: str) -> str:
-    """Mask an API key, showing only last 4 characters."""
+    """Mask an API key, showing only last 4 characters. Max length 50 chars."""
     if len(api_key) <= 4:
         return "****"
-    return "*" * (len(api_key) - 4) + api_key[-4:]
+    # Limit to 50 chars max to fit database column
+    visible_chars = api_key[-4:]
+    mask_len = min(len(api_key) - 4, 46)  # 46 asterisks + 4 visible = 50 max
+    return "*" * mask_len + visible_chars
 
 
 def get_provider_category(provider: str) -> str:
