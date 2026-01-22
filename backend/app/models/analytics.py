@@ -7,62 +7,74 @@ Stores performance metrics fetched from social media platforms.
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
-from app.core.database import Base, UUIDMixin
+from app.core.database import Base, UUIDMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.post import Post
+    from app.models.user import User
 
 
-class Analytics(Base, UUIDMixin):
+class Analytics(Base, UUIDMixin, TimestampMixin):
     """
     Analytics model for storing post performance metrics.
+    
+    This model matches the database schema from migration 001_initial_schema.
     
     Attributes:
         id: Unique identifier (UUID)
         post_id: Foreign key to post
-        
-        # Primary Metrics (High Priority)
+        user_id: Foreign key to user
+        platform: Platform the analytics are for
         views: Number of views
         likes: Number of likes
-        shares: Number of shares
-        
-        # Secondary Metrics (Medium Priority)
         comments: Number of comments
-        watch_time_seconds: Total watch time in seconds
-        avg_view_duration: Average view duration in seconds
-        retention_rate: Percentage of video watched (0-100)
-        
-        # Additional Metrics (Lower Priority)
+        shares: Number of shares
         saves: Number of saves/bookmarks
-        click_through_rate: CTR percentage
+        watch_time_seconds: Total watch time in seconds
+        avg_watch_percentage: Average percentage of video watched
+        engagement_rate: Engagement rate percentage
         reach: Unique accounts reached
         impressions: Total impressions
-        follower_change: Net follower change from this post
-        
-        # Tracking
+        clicks: Number of clicks
+        raw_data: Raw analytics data from platform API
         fetched_at: When these metrics were fetched
         
     Relationships:
         post: The post these analytics belong to
+        user: The user who owns this analytics data
     """
     
     __tablename__ = "analytics"
     
-    # Foreign Key
+    # Foreign Keys
     post_id = Column(
         UUID(as_uuid=True),
         ForeignKey("posts.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
         index=True,
         doc="Foreign key to post"
     )
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        doc="Foreign key to user"
+    )
     
-    # Primary Metrics (High Priority)
+    # Platform - stored as string
+    platform = Column(
+        String(20),
+        nullable=False,
+        index=True,
+        doc="Platform the analytics are for"
+    )
+    
+    # Primary Metrics
     views = Column(
         Integer,
         default=0,
@@ -75,84 +87,108 @@ class Analytics(Base, UUIDMixin):
         nullable=False,
         doc="Number of likes"
     )
-    shares = Column(
-        Integer,
-        default=0,
-        nullable=False,
-        doc="Number of shares"
-    )
-    
-    # Secondary Metrics (Medium Priority)
     comments = Column(
         Integer,
         default=0,
         nullable=False,
         doc="Number of comments"
     )
-    watch_time_seconds = Column(
+    shares = Column(
         Integer,
         default=0,
         nullable=False,
-        doc="Total watch time in seconds"
+        doc="Number of shares"
     )
-    avg_view_duration = Column(
-        Float,
-        default=0.0,
-        nullable=False,
-        doc="Average view duration in seconds"
-    )
-    retention_rate = Column(
-        Float,
-        default=0.0,
-        nullable=False,
-        doc="Percentage of video watched (0-100)"
-    )
-    
-    # Additional Metrics (Lower Priority)
     saves = Column(
         Integer,
         default=0,
         nullable=False,
         doc="Number of saves/bookmarks"
     )
-    click_through_rate = Column(
-        Float,
-        default=0.0,
-        nullable=False,
-        doc="CTR percentage"
-    )
-    reach = Column(
+    
+    # Watch Time Metrics
+    watch_time_seconds = Column(
         Integer,
         default=0,
         nullable=False,
+        doc="Total watch time in seconds"
+    )
+    avg_watch_percentage = Column(
+        Float,
+        nullable=True,
+        doc="Average percentage of video watched"
+    )
+    
+    # Engagement
+    engagement_rate = Column(
+        Float,
+        nullable=True,
+        doc="Engagement rate percentage"
+    )
+    
+    # Reach Metrics
+    reach = Column(
+        Integer,
+        nullable=True,
         doc="Unique accounts reached"
     )
     impressions = Column(
         Integer,
-        default=0,
-        nullable=False,
+        nullable=True,
         doc="Total impressions"
     )
-    follower_change = Column(
+    clicks = Column(
         Integer,
-        default=0,
-        nullable=False,
-        doc="Net follower change from this post"
+        nullable=True,
+        doc="Number of clicks"
+    )
+    
+    # Raw Data
+    raw_data = Column(
+        JSONB,
+        nullable=True,
+        doc="Raw analytics data from platform API"
     )
     
     # Tracking
     fetched_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=datetime.utcnow,
         nullable=False,
         doc="When these metrics were fetched"
     )
     
-    # Relationship
+    # Relationships
     post = relationship("Post", back_populates="analytics")
+    user = relationship("User", back_populates="analytics")
     
     def __repr__(self) -> str:
-        return f"<Analytics(id={self.id}, post_id={self.post_id}, views={self.views})>"
+        return f"<Analytics(id={self.id}, post_id={self.post_id}, platform={self.platform}, views={self.views})>"
+    
+    # Aliases for backwards compatibility
+    @property
+    def avg_view_duration(self) -> Optional[float]:
+        """Alias - calculate from watch_time_seconds and views."""
+        if self.views and self.watch_time_seconds:
+            return self.watch_time_seconds / self.views
+        return None
+    
+    @property
+    def retention_rate(self) -> Optional[float]:
+        """Alias for avg_watch_percentage."""
+        return self.avg_watch_percentage
+    
+    @property
+    def click_through_rate(self) -> Optional[float]:
+        """Calculate CTR from clicks and impressions."""
+        if self.impressions and self.clicks:
+            return (self.clicks / self.impressions) * 100
+        return None
+    
+    @property
+    def follower_change(self) -> int:
+        """Backwards compatibility - always 0 as not tracked in DB."""
+        return 0
     
     @property
     def engagement_count(self) -> int:
@@ -160,7 +196,7 @@ class Analytics(Base, UUIDMixin):
         return self.likes + self.comments + self.shares + self.saves
     
     @property
-    def engagement_rate(self) -> float:
+    def calculated_engagement_rate(self) -> float:
         """
         Calculate engagement rate as percentage.
         Engagement rate = (engagement / views) * 100
@@ -176,31 +212,17 @@ class Analytics(Base, UUIDMixin):
         shares: Optional[int] = None,
         comments: Optional[int] = None,
         watch_time_seconds: Optional[int] = None,
-        avg_view_duration: Optional[float] = None,
-        retention_rate: Optional[float] = None,
+        avg_watch_percentage: Optional[float] = None,
+        engagement_rate: Optional[float] = None,
         saves: Optional[int] = None,
-        click_through_rate: Optional[float] = None,
         reach: Optional[int] = None,
         impressions: Optional[int] = None,
-        follower_change: Optional[int] = None,
+        clicks: Optional[int] = None,
+        raw_data: Optional[dict] = None,
     ) -> None:
         """
         Update metrics with new values from platform API.
         Only updates fields that are provided (not None).
-        
-        Args:
-            views: New view count
-            likes: New like count
-            shares: New share count
-            comments: New comment count
-            watch_time_seconds: New total watch time
-            avg_view_duration: New average view duration
-            retention_rate: New retention rate
-            saves: New save count
-            click_through_rate: New CTR
-            reach: New reach count
-            impressions: New impression count
-            follower_change: New follower change
         """
         if views is not None:
             self.views = views
@@ -212,20 +234,20 @@ class Analytics(Base, UUIDMixin):
             self.comments = comments
         if watch_time_seconds is not None:
             self.watch_time_seconds = watch_time_seconds
-        if avg_view_duration is not None:
-            self.avg_view_duration = avg_view_duration
-        if retention_rate is not None:
-            self.retention_rate = retention_rate
+        if avg_watch_percentage is not None:
+            self.avg_watch_percentage = avg_watch_percentage
+        if engagement_rate is not None:
+            self.engagement_rate = engagement_rate
         if saves is not None:
             self.saves = saves
-        if click_through_rate is not None:
-            self.click_through_rate = click_through_rate
         if reach is not None:
             self.reach = reach
         if impressions is not None:
             self.impressions = impressions
-        if follower_change is not None:
-            self.follower_change = follower_change
+        if clicks is not None:
+            self.clicks = clicks
+        if raw_data is not None:
+            self.raw_data = raw_data
         
         # Update fetch timestamp
         self.fetched_at = datetime.utcnow()
@@ -233,20 +255,18 @@ class Analytics(Base, UUIDMixin):
     def to_dict(self) -> dict:
         """Convert analytics to dictionary."""
         return {
+            "platform": self.platform,
             "views": self.views,
             "likes": self.likes,
             "shares": self.shares,
             "comments": self.comments,
             "watch_time_seconds": self.watch_time_seconds,
-            "avg_view_duration": self.avg_view_duration,
-            "retention_rate": self.retention_rate,
+            "avg_watch_percentage": self.avg_watch_percentage,
+            "engagement_rate": self.engagement_rate,
             "saves": self.saves,
-            "click_through_rate": self.click_through_rate,
             "reach": self.reach,
             "impressions": self.impressions,
-            "follower_change": self.follower_change,
+            "clicks": self.clicks,
             "engagement_count": self.engagement_count,
-            "engagement_rate": self.engagement_rate,
             "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
         }
-

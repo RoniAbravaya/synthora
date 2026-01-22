@@ -69,10 +69,9 @@ def sync_post_analytics_job(post_id: str) -> dict:
             
             try:
                 # Get social account for this platform
-                social_platform = SocialPlatform(platform_name)
                 social_account = db.query(SocialAccount).filter(
                     SocialAccount.user_id == post.user_id,
-                    SocialAccount.platform == social_platform,
+                    SocialAccount.platform == platform_name,
                     SocialAccount.is_active == True,
                 ).first()
                 
@@ -284,7 +283,7 @@ def sync_channel_analytics_job(user_id: str) -> dict:
         
         for account in accounts:
             try:
-                platform_name = account.platform.value
+                platform_name = account.platform
                 
                 # Decrypt tokens
                 access_token = decrypt_value(account.access_token_encrypted)
@@ -311,7 +310,7 @@ def sync_channel_analytics_job(user_id: str) -> dict:
                 
             except Exception as e:
                 logger.error(f"Failed to fetch channel analytics for {account.platform}: {e}")
-                results[account.platform.value] = {"error": str(e)}
+                results[account.platform] = {"error": str(e)}
         
         return {
             "success": True,

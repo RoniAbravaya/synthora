@@ -303,7 +303,7 @@ async def get_post_analytics(
     last_synced = None
     
     for analytics in analytics_list:
-        platform_name = analytics.platform.value
+        platform_name = analytics.platform
         
         if platform_name not in platforms:
             platforms[platform_name] = AnalyticsMetrics(

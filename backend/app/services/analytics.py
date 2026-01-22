@@ -134,10 +134,10 @@ class AnalyticsService:
         # Group by platform
         by_platform = defaultdict(lambda: {"views": 0, "likes": 0, "comments": 0, "shares": 0})
         for a in analytics_data:
-            by_platform[a.platform.value]["views"] += a.views
-            by_platform[a.platform.value]["likes"] += a.likes
-            by_platform[a.platform.value]["comments"] += a.comments
-            by_platform[a.platform.value]["shares"] += a.shares
+            by_platform[a.platform]["views"] += a.views
+            by_platform[a.platform]["likes"] += a.likes
+            by_platform[a.platform]["comments"] += a.comments
+            by_platform[a.platform]["shares"] += a.shares
         
         return {
             "period_days": days,

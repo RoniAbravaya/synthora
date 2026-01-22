@@ -189,7 +189,7 @@ class PerformancePredictor:
                 if platform not in by_platform:
                     by_platform[platform] = {"views": [], "engagement": []}
                 
-                platform_analytics = [a for a in analytics if a.platform.value == platform]
+                platform_analytics = [a for a in analytics if a.platform == platform]
                 if platform_analytics:
                     platform_views = sum(a.views for a in platform_analytics)
                     platform_engagement = sum(a.likes + a.comments + a.shares for a in platform_analytics)

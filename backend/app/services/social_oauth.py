@@ -124,7 +124,9 @@ class SocialOAuthService:
         )
         
         if platform:
-            query = query.filter(SocialAccount.platform == platform)
+            # Handle both enum and string values
+            platform_value = platform.value if hasattr(platform, 'value') else platform
+            query = query.filter(SocialAccount.platform == platform_value)
         
         return query.order_by(SocialAccount.created_at.desc()).all()
     
@@ -151,9 +153,11 @@ class SocialOAuthService:
         Returns:
             SocialAccount if found
         """
+        # Handle both enum and string values
+        platform_value = platform.value if hasattr(platform, 'value') else platform
         return self.db.query(SocialAccount).filter(
             SocialAccount.user_id == user_id,
-            SocialAccount.platform == platform,
+            SocialAccount.platform == platform_value,
             SocialAccount.platform_user_id == platform_user_id,
         ).first()
     
@@ -197,6 +201,9 @@ class SocialOAuthService:
         encrypted_access = encrypt_value(access_token)
         encrypted_refresh = encrypt_value(refresh_token) if refresh_token else None
         
+        # Convert platform enum to string value
+        platform_str = platform.value if hasattr(platform, 'value') else platform
+        
         if account:
             # Update existing account
             account.username = username
@@ -206,16 +213,17 @@ class SocialOAuthService:
             account.profile_url = profile_url
             account.avatar_url = avatar_url
             account.scopes = scopes or []
-            account.metadata = metadata or {}
-            account.status = AccountStatus.ACTIVE
-            account.last_sync_at = datetime.utcnow()
+            account.extra_metadata = metadata or {}
+            account.status = "connected"
+            account.is_active = True
+            account.last_used_at = datetime.utcnow()
             
-            logger.info(f"Updated social account: {platform.value}/{username}")
+            logger.info(f"Updated social account: {platform_str}/{username}")
         else:
             # Create new account
             account = SocialAccount(
                 user_id=user_id,
-                platform=platform,
+                platform=platform_str,
                 platform_user_id=platform_user_id,
                 username=username,
                 access_token_encrypted=encrypted_access,
@@ -224,13 +232,13 @@ class SocialOAuthService:
                 profile_url=profile_url,
                 avatar_url=avatar_url,
                 scopes=scopes or [],
-                metadata=metadata or {},
-                status=AccountStatus.ACTIVE,
-                last_sync_at=datetime.utcnow(),
+                extra_metadata=metadata or {},
+                status="connected",
+                is_active=True,
             )
             self.db.add(account)
             
-            logger.info(f"Created social account: {platform.value}/{username}")
+            logger.info(f"Created social account: {platform_str}/{username}")
         
         self.db.commit()
         self.db.refresh(account)
@@ -244,7 +252,7 @@ class SocialOAuthService:
         Args:
             account: SocialAccount to disconnect
         """
-        account_info = f"{account.platform.value}/{account.username}"
+        account_info = f"{account.platform}/{account.username}"
         
         self.db.delete(account)
         self.db.commit()
