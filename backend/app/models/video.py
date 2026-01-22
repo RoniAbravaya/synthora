@@ -8,8 +8,8 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional, Dict, Any, List
 
-from sqlalchemy import Column, String, Integer, Float, Boolean, Text, DateTime, ForeignKey, Enum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, Integer, Float, Text, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base, TimestampMixin, UUIDMixin
@@ -50,37 +50,28 @@ class Video(Base, UUIDMixin, TimestampMixin):
     """
     Video model for generated videos.
     
+    This model matches the database schema from migration 001_initial_schema.
+    
     Attributes:
         id: Unique identifier (UUID)
         user_id: Foreign key to user
         template_id: Foreign key to template (optional)
-        
-        # Basic Info
         title: Video title
         prompt: User's input prompt/topic
-        description: Generated or user-provided description
-        
-        # Status
         status: Current generation status
-        current_step: Current step in generation pipeline
         progress: Overall progress percentage (0-100)
-        
-        # Generation State (stores intermediate results)
-        generation_state: JSON with step results and data
-        error_log: JSON with error details if failed
-        
-        # Output
+        current_step: Current step in generation pipeline
         video_url: URL to the generated video (GCS)
         thumbnail_url: URL to video thumbnail
         duration: Video duration in seconds
         file_size: File size in bytes
         resolution: Video resolution (e.g., "1080x1920")
-        
-        # Metadata
+        config: General video configuration
+        generation_config: Configuration for generation pipeline
         integrations_used: List of integrations used
         generation_time_seconds: How long generation took
-        
-        # Retention
+        error_message: Error message if failed
+        retry_count: Number of retry attempts
         expires_at: When the video expires (for free users)
         
     Relationships:
@@ -118,24 +109,14 @@ class Video(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         doc="User's input prompt/topic"
     )
-    description = Column(
-        Text,
-        nullable=True,
-        doc="Video description"
-    )
     
-    # Status
+    # Status - stored as strings in DB
     status = Column(
-        Enum(VideoStatus),
-        default=VideoStatus.PENDING,
+        String(20),
+        default="pending",
         nullable=False,
         index=True,
         doc="Current generation status"
-    )
-    current_step = Column(
-        Enum(GenerationStep),
-        nullable=True,
-        doc="Current step in generation pipeline"
     )
     progress = Column(
         Integer,
@@ -143,28 +124,20 @@ class Video(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         doc="Overall progress percentage (0-100)"
     )
-    
-    # Generation State
-    generation_state = Column(
-        JSONB,
-        default=dict,
-        nullable=False,
-        doc="JSON with step results and intermediate data"
-    )
-    error_log = Column(
-        JSONB,
+    current_step = Column(
+        String(50),
         nullable=True,
-        doc="JSON with error details if failed"
+        doc="Current step in generation pipeline"
     )
     
     # Output
     video_url = Column(
-        Text,
+        String(500),
         nullable=True,
         doc="URL to the generated video (GCS)"
     )
     thumbnail_url = Column(
-        Text,
+        String(500),
         nullable=True,
         doc="URL to video thumbnail"
     )
@@ -184,11 +157,22 @@ class Video(Base, UUIDMixin, TimestampMixin):
         doc="Video resolution (e.g., '1080x1920')"
     )
     
+    # Configuration
+    config = Column(
+        JSONB,
+        nullable=True,
+        doc="General video configuration"
+    )
+    generation_config = Column(
+        JSONB,
+        nullable=True,
+        doc="Configuration for generation pipeline"
+    )
+    
     # Metadata
     integrations_used = Column(
-        JSONB,
-        default=list,
-        nullable=False,
+        ARRAY(String(50)),
+        nullable=True,
         doc="List of integrations used"
     )
     generation_time_seconds = Column(
@@ -197,17 +181,22 @@ class Video(Base, UUIDMixin, TimestampMixin):
         doc="How long generation took"
     )
     
-    # Generation Settings (snapshot of settings used)
-    settings_snapshot = Column(
-        JSONB,
-        default=dict,
+    # Error handling
+    error_message = Column(
+        Text,
+        nullable=True,
+        doc="Error message if generation failed"
+    )
+    retry_count = Column(
+        Integer,
+        default=0,
         nullable=False,
-        doc="Snapshot of generation settings"
+        doc="Number of retry attempts"
     )
     
     # Retention
     expires_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         index=True,
         doc="When the video expires (for free users)"
@@ -224,17 +213,17 @@ class Video(Base, UUIDMixin, TimestampMixin):
     @property
     def is_completed(self) -> bool:
         """Check if video generation is completed."""
-        return self.status == VideoStatus.COMPLETED
+        return self.status == "completed"
     
     @property
     def is_processing(self) -> bool:
         """Check if video is currently being processed."""
-        return self.status == VideoStatus.PROCESSING
+        return self.status == "processing"
     
     @property
     def is_failed(self) -> bool:
         """Check if video generation failed."""
-        return self.status == VideoStatus.FAILED
+        return self.status == "failed"
     
     @property
     def is_expired(self) -> bool:
@@ -246,99 +235,22 @@ class Video(Base, UUIDMixin, TimestampMixin):
     @property
     def can_retry(self) -> bool:
         """Check if generation can be retried."""
-        return self.status in (VideoStatus.FAILED, VideoStatus.CANCELLED)
+        return self.status in ("failed", "cancelled")
     
-    def get_step_status(self, step: GenerationStep) -> Dict[str, Any]:
-        """
-        Get the status of a specific generation step.
-        
-        Args:
-            step: The generation step to check
-            
-        Returns:
-            Dict with status, progress, and any results
-        """
-        step_data = self.generation_state.get(step.value, {})
-        return {
-            "status": step_data.get("status", "pending"),
-            "progress": step_data.get("progress", 0),
-            "result": step_data.get("result"),
-            "error": step_data.get("error"),
-        }
+    # Aliases for backwards compatibility
+    @property
+    def generation_state(self) -> Optional[Dict]:
+        """Alias for generation_config."""
+        return self.generation_config
     
-    def update_step(
-        self,
-        step: GenerationStep,
-        status: str,
-        progress: int = 0,
-        result: Any = None,
-        error: str = None
-    ) -> None:
-        """
-        Update the status of a generation step.
-        
-        Args:
-            step: The generation step to update
-            status: New status (pending, processing, completed, failed)
-            progress: Progress percentage for this step
-            result: Any result data from the step
-            error: Error message if failed
-        """
-        if not self.generation_state:
-            self.generation_state = {}
-        
-        self.generation_state[step.value] = {
-            "status": status,
-            "progress": progress,
-            "result": result,
-            "error": error,
-            "updated_at": datetime.utcnow().isoformat(),
-        }
-        
-        # Update current step
-        self.current_step = step
-        
-        # Calculate overall progress
-        steps = list(GenerationStep)
-        completed_steps = sum(
-            1 for s in steps
-            if self.generation_state.get(s.value, {}).get("status") == "completed"
-        )
-        self.progress = int((completed_steps / len(steps)) * 100)
+    @property
+    def error_log(self) -> Optional[Dict]:
+        """Alias for error_message as dict."""
+        if self.error_message:
+            return {"message": self.error_message}
+        return None
     
-    def get_last_successful_step(self) -> Optional[GenerationStep]:
-        """
-        Get the last successfully completed step.
-        Useful for resuming failed generations.
-        
-        Returns:
-            The last completed step, or None if no steps completed
-        """
-        steps = list(GenerationStep)
-        last_completed = None
-        
-        for step in steps:
-            step_data = self.generation_state.get(step.value, {})
-            if step_data.get("status") == "completed":
-                last_completed = step
-            else:
-                break
-        
-        return last_completed
-    
-    def set_error(self, error_message: str, error_details: Dict = None) -> None:
-        """
-        Set error information when generation fails.
-        
-        Args:
-            error_message: Human-readable error message
-            error_details: Additional error details (stack trace, API response, etc.)
-        """
-        self.status = VideoStatus.FAILED
-        self.error_log = {
-            "message": error_message,
-            "details": error_details or {},
-            "step": self.current_step.value if self.current_step else None,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
-
+    @property
+    def settings_snapshot(self) -> Optional[Dict]:
+        """Alias for config."""
+        return self.config
