@@ -152,7 +152,7 @@ class PerformancePredictor:
         posts = self.db.query(Post).filter(
             and_(
                 Post.user_id == user_id,
-                Post.status == PostStatus.PUBLISHED,
+                Post.status == "published",
                 Post.published_at >= cutoff,
             )
         ).all()
@@ -260,7 +260,7 @@ class PerformancePredictor:
         posts = self.db.query(Post).filter(
             and_(
                 Post.video_id.in_(video_ids),
-                Post.status == PostStatus.PUBLISHED,
+                Post.status == "published",
             )
         ).all()
         

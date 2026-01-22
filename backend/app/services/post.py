@@ -104,7 +104,7 @@ class PostService:
         query = self.db.query(Post).filter(
             and_(
                 Post.user_id == user_id,
-                Post.status == PostStatus.SCHEDULED,
+                Post.status == "scheduled",
             )
         )
         
@@ -130,7 +130,7 @@ class PostService:
         
         return self.db.query(Post).filter(
             and_(
-                Post.status == PostStatus.SCHEDULED,
+                Post.status == "scheduled",
                 Post.scheduled_at <= now,
             )
         ).order_by(Post.scheduled_at.asc()).limit(limit).all()
@@ -240,14 +240,14 @@ class PostService:
         if video.user_id != user_id:
             raise ValueError("Not authorized to post this video")
         
-        if video.status != VideoStatus.COMPLETED:
+        if video.status != "completed":
             raise ValueError("Video must be completed before posting")
         
         # Determine initial status
         if scheduled_at:
-            status = PostStatus.SCHEDULED
+            status = "scheduled"
         else:
-            status = PostStatus.DRAFT
+            status = "draft"
         
         # Initialize platform statuses
         platform_status = {
@@ -300,7 +300,7 @@ class PostService:
         Returns:
             Updated Post instance
         """
-        if post.status in [PostStatus.PUBLISHING, PostStatus.PUBLISHED]:
+        if post.status in ["publishing", "published"]:
             raise ValueError("Cannot update a post that is publishing or published")
         
         if title is not None:
@@ -326,8 +326,8 @@ class PostService:
         
         if scheduled_at is not None:
             post.scheduled_at = scheduled_at
-            if scheduled_at and post.status == PostStatus.DRAFT:
-                post.status = PostStatus.SCHEDULED
+            if scheduled_at and post.status == "draft":
+                post.status = "scheduled"
         
         if platform_overrides is not None:
             post.platform_overrides = platform_overrides
@@ -345,7 +345,7 @@ class PostService:
         Args:
             post: Post to delete
         """
-        if post.status == PostStatus.PUBLISHING:
+        if post.status == "publishing":
             raise ValueError("Cannot delete a post that is currently publishing")
         
         post_id = post.id
@@ -369,10 +369,10 @@ class PostService:
         Returns:
             Updated Post instance
         """
-        if post.status not in [PostStatus.DRAFT, PostStatus.SCHEDULED, PostStatus.PARTIALLY_PUBLISHED]:
-            raise ValueError(f"Cannot publish post in status: {post.status.value}")
+        if post.status not in ["draft", "scheduled", "partially_published"]:
+            raise ValueError(f"Cannot publish post in status: {post.status}")
         
-        post.status = PostStatus.PUBLISHING
+        post.status = "publishing"
         
         self.db.commit()
         self.db.refresh(post)
@@ -429,14 +429,14 @@ class PostService:
         statuses = [s.get("status") for s in post.platform_status.values()]
         
         if all(s == "published" for s in statuses):
-            post.status = PostStatus.PUBLISHED
+            post.status = "published"
             post.published_at = datetime.utcnow()
         elif all(s == "failed" for s in statuses):
-            post.status = PostStatus.FAILED
+            post.status = "failed"
         elif any(s == "published" for s in statuses) and any(s == "failed" for s in statuses):
-            post.status = PostStatus.PARTIALLY_PUBLISHED
+            post.status = "partially_published"
         elif any(s == "publishing" for s in statuses):
-            post.status = PostStatus.PUBLISHING
+            post.status = "publishing"
     
     def complete_publishing(
         self,
@@ -503,7 +503,7 @@ class PostService:
         scheduled_this_week = self.db.query(Post).filter(
             and_(
                 Post.user_id == user_id,
-                Post.status == PostStatus.SCHEDULED,
+                Post.status == "scheduled",
                 Post.scheduled_at >= week_start,
                 Post.scheduled_at <= week_end,
             )

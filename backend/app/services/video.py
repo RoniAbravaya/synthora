@@ -100,7 +100,7 @@ class VideoService:
         return self.db.query(Video).filter(
             and_(
                 Video.user_id == user_id,
-                Video.status.in_([VideoStatus.PENDING, VideoStatus.PROCESSING]),
+                Video.status.in_(["pending", "processing"]),
             )
         ).first()
     
@@ -155,7 +155,7 @@ class VideoService:
             template_id=template_id,
             title=title,
             prompt=prompt,
-            status=VideoStatus.PENDING,
+            status="pending",
             progress=0,
             expires_at=expires_at,
         )
@@ -286,7 +286,7 @@ class VideoService:
         Returns:
             Updated Video instance
         """
-        video.status = VideoStatus.COMPLETED
+        video.status = "completed"
         video.progress = 100
         video.video_url = video_url
         video.thumbnail_url = thumbnail_url

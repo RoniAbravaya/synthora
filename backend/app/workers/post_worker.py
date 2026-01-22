@@ -54,7 +54,7 @@ def publish_scheduled_post(post_id: str) -> Dict[str, Any]:
             return {"success": False, "error": "Post not found"}
         
         # Check if post is still scheduled
-        if post.status != PostStatus.SCHEDULED:
+        if post.status != "scheduled":
             logger.warning(f"Post {post_id} is not scheduled (status: {post.status.value})")
             return {"success": False, "error": f"Post status is {post.status.value}"}
         
@@ -91,8 +91,8 @@ def publish_post_now(post_id: str) -> Dict[str, Any]:
         if not post:
             return {"success": False, "error": "Post not found"}
         
-        if post.status not in [PostStatus.DRAFT, PostStatus.SCHEDULED]:
-            return {"success": False, "error": f"Cannot publish post in status: {post.status.value}"}
+        if post.status not in ["draft", "scheduled"]:
+            return {"success": False, "error": f"Cannot publish post in status: {post.status}"}
         
         result = asyncio.run(_publish_post(db, post))
         

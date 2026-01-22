@@ -335,7 +335,7 @@ async def retry_video(
             detail="Not authorized to retry this video",
         )
     
-    if video.status not in [VideoStatus.FAILED]:
+    if video.status not in ["failed"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot retry video in status: {video.status.value}",
@@ -358,7 +358,7 @@ async def retry_video(
     )
     
     # Update status
-    video_service.update_status(video, VideoStatus.PENDING, progress=0)
+    video_service.update_status(video, "pending", progress=0)
     
     return _video_to_response(video)
 
@@ -397,7 +397,7 @@ async def delete_video(
         )
     
     # Cannot delete while generating
-    if video.status in [VideoStatus.PENDING, VideoStatus.PROCESSING]:
+    if video.status in ["pending", "processing"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete a video that is currently generating",

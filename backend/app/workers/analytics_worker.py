@@ -56,7 +56,7 @@ def sync_post_analytics_job(post_id: str) -> dict:
         if not post:
             return {"success": False, "error": "Post not found"}
         
-        if post.status != PostStatus.PUBLISHED:
+        if post.status != "published":
             return {"success": False, "error": "Post not published"}
         
         analytics_service = AnalyticsService(db)
@@ -169,7 +169,7 @@ def sync_user_analytics_job(user_id: str) -> dict:
         # Get all published posts
         posts = db.query(Post).filter(
             Post.user_id == user_uuid,
-            Post.status == PostStatus.PUBLISHED,
+            Post.status == "published",
         ).all()
         
         results = {
@@ -226,7 +226,7 @@ def daily_analytics_sync_job() -> dict:
         from app.models.user import User
         
         users_with_posts = db.query(User.id).join(Post).filter(
-            Post.status == PostStatus.PUBLISHED,
+            Post.status == "published",
         ).distinct().all()
         
         results = {
