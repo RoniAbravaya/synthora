@@ -5,7 +5,7 @@
  */
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react"
-import { onAuthChange, signInWithGoogle, signOut, type FirebaseUser } from "@/lib/firebase"
+import { onAuthChange, signInWithGoogle, signOut, getIdToken, type FirebaseUser } from "@/lib/firebase"
 import { apiClient } from "@/lib/api"
 import type { User, AuthState } from "@/types"
 
@@ -45,12 +45,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
    */
   const fetchUser = useCallback(async (firebaseUser: FirebaseUser) => {
     try {
-      // Call backend to get/create user
-      const response = await apiClient.post<{ user: User }>("/auth/login", {
-        firebase_uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        display_name: firebaseUser.displayName,
-        photo_url: firebaseUser.photoURL,
+      // Get the Firebase ID token
+      const idToken = await firebaseUser.getIdToken()
+      
+      // Call backend with the ID token for verification
+      const response = await apiClient.post<{ user: User; is_new_user: boolean; setup_required: boolean }>("/auth/login", {
+        id_token: idToken,
       })
       
       setState({

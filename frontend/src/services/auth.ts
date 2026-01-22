@@ -6,10 +6,7 @@ import { apiClient } from "@/lib/api"
 import type { User } from "@/types"
 
 export interface LoginRequest {
-  firebase_uid: string
-  email: string | null
-  display_name: string | null
-  photo_url: string | null
+  id_token: string
 }
 
 export interface LoginResponse {
