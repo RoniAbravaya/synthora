@@ -369,7 +369,7 @@ class GenerationPipeline:
         from app.services.generation.media import MediaFetcher
         
         integration = self._get_integration(
-            IntegrationCategory.STOCK_MEDIA,
+            IntegrationCategory.MEDIA,
             self.config.preferred_media_provider,
         )
         
@@ -442,7 +442,7 @@ class GenerationPipeline:
         from app.services.generation.assembly import VideoAssembler
         
         integration = self._get_integration(
-            IntegrationCategory.VIDEO_ASSEMBLY,
+            IntegrationCategory.ASSEMBLY,
             self.config.preferred_assembly_provider,
         )
         
