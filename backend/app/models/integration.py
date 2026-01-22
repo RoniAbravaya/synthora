@@ -9,7 +9,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional, Dict, Any
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Text, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
@@ -129,7 +129,7 @@ class Integration(Base):
     __tablename__ = "integrations"
     
     # Primary Key
-    id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     
     # Foreign Key
     user_id = Column(
