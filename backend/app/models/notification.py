@@ -126,8 +126,9 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         doc="Label for action button"
     )
     
-    # Additional data
-    metadata = Column(
+    # Additional data - use 'extra_data' in Python but maps to 'metadata' column in DB
+    extra_data = Column(
+        "metadata",  # Actual column name in database
         JSONB,
         nullable=True,
         doc="Additional data (links, IDs, etc.)"
@@ -142,8 +143,8 @@ class Notification(Base, UUIDMixin, TimestampMixin):
     # Alias for backwards compatibility
     @property
     def data(self) -> Optional[dict]:
-        """Alias for metadata."""
-        return self.metadata
+        """Alias for extra_data."""
+        return self.extra_data
     
     def mark_read(self) -> None:
         """Mark notification as read."""
@@ -161,7 +162,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             type="video_generation_complete",
             title="Video Ready!",
             message=f"Your video '{video_title}' has been generated successfully.",
-            metadata={"video_id": str(video_id), "action": "view_video"}
+            extra_data={"video_id": str(video_id), "action": "view_video"}
         )
     
     @staticmethod
@@ -173,7 +174,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             title="Video Generation Failed",
             message=f"Your video could not be generated: {error_message}",
             priority="high",
-            metadata={"video_id": str(video_id), "action": "retry_video"}
+            extra_data={"video_id": str(video_id), "action": "retry_video"}
         )
     
     @staticmethod
@@ -191,7 +192,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             message=f"Your video has been posted to {platform.title()} successfully.",
             action_url=post_url,
             action_label="View Post",
-            metadata={
+            extra_data={
                 "post_id": str(post_id),
                 "platform": platform,
                 "post_url": post_url,
@@ -212,7 +213,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             title=f"Failed to Post to {platform.title()}",
             message=f"Could not post to {platform.title()}: {error_message}",
             priority="high",
-            metadata={
+            extra_data={
                 "post_id": str(post_id),
                 "platform": platform,
             }
@@ -232,7 +233,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             title="Video Expiring Soon",
             message=f"Your video '{video_title}' will expire in {days_remaining} days. Upgrade to Premium for unlimited retention.",
             action_label="Upgrade",
-            metadata={
+            extra_data={
                 "video_id": str(video_id),
                 "days_remaining": days_remaining,
             }
