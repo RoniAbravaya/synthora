@@ -9,6 +9,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
+import uuid as uuid_lib
 from sqlalchemy import Column, String, Boolean, DateTime, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -72,7 +73,7 @@ class User(Base):
     __tablename__ = "users"
     
     # Primary Key
-    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid_lib.uuid4)
     
     # Authentication
     firebase_uid = Column(
