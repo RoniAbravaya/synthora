@@ -8,12 +8,11 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional, List
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Enum, Integer
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base, TimestampMixin, UUIDMixin
-from app.models.social_account import SocialPlatform
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -45,32 +44,24 @@ class Post(Base, UUIDMixin, TimestampMixin):
     """
     Post model for social media posts.
     
+    This model matches the database schema from migration 001_initial_schema.
+    
     Attributes:
         id: Unique identifier (UUID)
         user_id: Foreign key to user
         video_id: Foreign key to video
         social_account_id: Foreign key to social account
-        
-        # Platform Info
         platform: Target platform
-        
-        # Content
+        platform_post_id: Platform-specific post ID
         caption: Post caption/description
         hashtags: List of hashtags
-        platform_specific: Platform-specific settings (JSON)
-        
-        # Status
         status: Current post status
         scheduled_at: When the post is scheduled for
         published_at: When the post was published
-        
-        # Platform Response
-        post_id: Platform-specific post ID
         post_url: URL to the post on the platform
-        
-        # Error Tracking
-        error_log: Error details if failed
+        error_message: Error message if failed
         retry_count: Number of retry attempts
+        platform_config: Platform-specific settings (JSON)
         
     Relationships:
         user: The user who created this post
@@ -104,12 +95,17 @@ class Post(Base, UUIDMixin, TimestampMixin):
         doc="Foreign key to social account"
     )
     
-    # Platform Info
+    # Platform Info - stored as string in DB
     platform = Column(
-        Enum(SocialPlatform),
+        String(20),
         nullable=False,
         index=True,
         doc="Target platform"
+    )
+    platform_post_id = Column(
+        String(255),
+        nullable=True,
+        doc="Platform-specific post ID"
     )
     
     # Content
@@ -119,61 +115,56 @@ class Post(Base, UUIDMixin, TimestampMixin):
         doc="Post caption/description"
     )
     hashtags = Column(
-        ARRAY(String),
-        default=list,
-        nullable=False,
+        ARRAY(String(100)),
+        nullable=True,
         doc="List of hashtags"
     )
-    platform_specific = Column(
-        JSONB,
-        default=dict,
-        nullable=False,
-        doc="Platform-specific settings"
-    )
     
-    # Status
+    # Status - stored as string in DB
     status = Column(
-        Enum(PostStatus),
-        default=PostStatus.DRAFT,
+        String(20),
+        default="draft",
         nullable=False,
         index=True,
         doc="Current post status"
     )
     scheduled_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         index=True,
         doc="When the post is scheduled for"
     )
     published_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         doc="When the post was published"
     )
     
     # Platform Response
-    post_id = Column(
-        String(255),
-        nullable=True,
-        doc="Platform-specific post ID"
-    )
     post_url = Column(
-        Text,
+        String(500),
         nullable=True,
         doc="URL to the post on the platform"
     )
     
     # Error Tracking
-    error_log = Column(
-        JSONB,
+    error_message = Column(
+        Text,
         nullable=True,
-        doc="Error details if failed"
+        doc="Error message if failed"
     )
     retry_count = Column(
         Integer,
         default=0,
         nullable=False,
         doc="Number of retry attempts"
+    )
+    
+    # Platform-specific config
+    platform_config = Column(
+        JSONB,
+        nullable=True,
+        doc="Platform-specific settings"
     )
     
     # Relationships
@@ -185,15 +176,33 @@ class Post(Base, UUIDMixin, TimestampMixin):
     def __repr__(self) -> str:
         return f"<Post(id={self.id}, platform={self.platform}, status={self.status})>"
     
+    # Aliases for backwards compatibility
+    @property
+    def post_id(self) -> Optional[str]:
+        """Alias for platform_post_id."""
+        return self.platform_post_id
+    
+    @property
+    def platform_specific(self) -> Optional[dict]:
+        """Alias for platform_config."""
+        return self.platform_config
+    
+    @property
+    def error_log(self) -> Optional[dict]:
+        """Alias for error_message as dict."""
+        if self.error_message:
+            return {"message": self.error_message}
+        return None
+    
     @property
     def is_published(self) -> bool:
         """Check if post is published."""
-        return self.status == PostStatus.PUBLISHED
+        return self.status == "published"
     
     @property
     def is_scheduled(self) -> bool:
         """Check if post is scheduled."""
-        return self.status == PostStatus.SCHEDULED
+        return self.status == "scheduled"
     
     @property
     def is_due(self) -> bool:
@@ -205,12 +214,12 @@ class Post(Base, UUIDMixin, TimestampMixin):
     @property
     def can_edit(self) -> bool:
         """Check if post can be edited."""
-        return self.status in (PostStatus.DRAFT, PostStatus.SCHEDULED)
+        return self.status in ("draft", "scheduled")
     
     @property
     def can_cancel(self) -> bool:
         """Check if post can be cancelled."""
-        return self.status == PostStatus.SCHEDULED
+        return self.status == "scheduled"
     
     @property
     def formatted_hashtags(self) -> str:
@@ -231,7 +240,7 @@ class Post(Base, UUIDMixin, TimestampMixin):
     
     def mark_publishing(self) -> None:
         """Mark post as currently being published."""
-        self.status = PostStatus.PUBLISHING
+        self.status = "publishing"
     
     def mark_published(self, post_id: str, post_url: str) -> None:
         """
@@ -241,34 +250,23 @@ class Post(Base, UUIDMixin, TimestampMixin):
             post_id: Platform-specific post ID
             post_url: URL to the post
         """
-        self.status = PostStatus.PUBLISHED
+        self.status = "published"
         self.published_at = datetime.utcnow()
-        self.post_id = post_id
+        self.platform_post_id = post_id
         self.post_url = post_url
     
-    def mark_failed(self, error_message: str, error_details: dict = None) -> None:
+    def mark_failed(self, error_msg: str) -> None:
         """
         Mark post as failed.
         
         Args:
-            error_message: Human-readable error message
-            error_details: Additional error details
+            error_msg: Human-readable error message
         """
-        self.status = PostStatus.FAILED
+        self.status = "failed"
         self.retry_count += 1
-        self.error_log = {
-            "message": error_message,
-            "details": error_details or {},
-            "timestamp": datetime.utcnow().isoformat(),
-            "attempt": self.retry_count,
-        }
+        self.error_message = error_msg
     
     def cancel(self) -> None:
         """Cancel a scheduled post."""
         if self.can_cancel:
-            self.status = PostStatus.CANCELLED
-
-
-# Import Integer for retry_count
-from sqlalchemy import Integer
-
+            self.status = "cancelled"
