@@ -188,8 +188,8 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
         return self.avatar_url
     
     @property
-    def metadata(self) -> Optional[dict]:
-        """Alias for extra_metadata."""
+    def account_metadata(self) -> Optional[dict]:
+        """Alias for extra_metadata (renamed to avoid SQLAlchemy conflict)."""
         return self.extra_metadata
     
     @property

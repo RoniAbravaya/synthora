@@ -301,7 +301,7 @@ class SocialOAuthService:
         """
         if not account.refresh_token_encrypted:
             logger.warning(f"No refresh token for account {account.id}")
-            account.status = AccountStatus.EXPIRED
+            account.status = "expired"
             self.db.commit()
             return False
         
@@ -315,7 +315,7 @@ class SocialOAuthService:
             new_tokens = client.refresh_access_token(refresh_token)
             
             if not new_tokens:
-                account.status = AccountStatus.EXPIRED
+                account.status = "expired"
                 self.db.commit()
                 return False
             
@@ -332,7 +332,7 @@ class SocialOAuthService:
                     seconds=new_tokens["expires_in"]
                 )
             
-            account.status = AccountStatus.ACTIVE
+            account.status = "connected"
             self.db.commit()
             
             logger.info(f"Refreshed token for account {account.id}")
@@ -340,7 +340,7 @@ class SocialOAuthService:
             
         except Exception as e:
             logger.exception(f"Failed to refresh token for account {account.id}")
-            account.status = AccountStatus.ERROR
+            account.status = "error"
             self.db.commit()
             return False
     
@@ -356,10 +356,10 @@ class SocialOAuthService:
             account: SocialAccount instance
             error_message: Error description
         """
-        account.status = AccountStatus.ERROR
-        account.metadata = account.metadata or {}
-        account.metadata["last_error"] = error_message
-        account.metadata["error_at"] = datetime.utcnow().isoformat()
+        account.status = "error"
+        account.extra_metadata = account.extra_metadata or {}
+        account.extra_metadata["last_error"] = error_message
+        account.extra_metadata["error_at"] = datetime.utcnow().isoformat()
         
         self.db.commit()
         
