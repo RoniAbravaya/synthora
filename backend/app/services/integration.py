@@ -28,10 +28,10 @@ logger = logging.getLogger(__name__)
 # Required categories for video generation
 # User must have at least one integration from each of these categories
 REQUIRED_CATEGORIES = {
-    IntegrationCategory.SCRIPT,       # OpenAI for script generation
-    IntegrationCategory.VOICE,        # ElevenLabs for voice-over
-    IntegrationCategory.STOCK_MEDIA,  # Pexels/Unsplash for stock footage
-    IntegrationCategory.VIDEO_ASSEMBLY,  # FFmpeg/Creatomate etc. for assembly
+    IntegrationCategory.SCRIPT,    # OpenAI for script generation
+    IntegrationCategory.VOICE,     # ElevenLabs for voice-over
+    IntegrationCategory.MEDIA,     # Pexels/Unsplash for stock footage
+    IntegrationCategory.ASSEMBLY,  # FFmpeg/Creatomate etc. for assembly
 }
 
 # Optional but recommended
