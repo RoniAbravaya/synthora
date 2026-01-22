@@ -65,7 +65,7 @@ export const videosService = {
    * Start video generation.
    */
   generate: (data: VideoGenerationRequest) =>
-    apiClient.post<VideoGenerationResponse>("/videos/generate", data),
+    apiClient.post<VideoGenerationResponse>("/videos", data),
 
   /**
    * Retry failed video generation.
