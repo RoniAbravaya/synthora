@@ -11,7 +11,6 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.common import BaseSchema, IDSchema, TimestampSchema
-from app.models.notification import NotificationType
 
 
 # =============================================================================
@@ -23,17 +22,13 @@ class NotificationResponse(IDSchema, TimestampSchema):
     
     notification_type: str
     title: str
-    message: str
+    message: Optional[str] = None
     priority: str
     is_read: bool
     is_dismissed: bool
-    read_at: Optional[datetime] = None
-    dismissed_at: Optional[datetime] = None
     action_url: Optional[str] = None
     action_text: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    related_video_id: Optional[UUID] = None
-    related_post_id: Optional[UUID] = None
 
 
 class NotificationListItem(BaseSchema):
@@ -42,7 +37,7 @@ class NotificationListItem(BaseSchema):
     id: UUID
     notification_type: str
     title: str
-    message: str
+    message: Optional[str] = None
     priority: str
     is_read: bool
     action_url: Optional[str] = None

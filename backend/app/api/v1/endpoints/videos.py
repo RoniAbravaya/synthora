@@ -36,6 +36,50 @@ router = APIRouter(prefix="/videos", tags=["Videos"])
 
 
 # =============================================================================
+# Daily Limit
+# =============================================================================
+
+@router.get("/daily-limit")
+async def get_daily_limit(
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the user's daily video generation limit status.
+    
+    **Returns:**
+    - `used`: Number of videos generated today
+    - `limit`: Maximum videos allowed per day (null if unlimited)
+    - `remaining`: Videos remaining today (null if unlimited)
+    - `resets_at`: When the daily limit resets (UTC midnight)
+    
+    **Requires:** Authentication
+    """
+    from datetime import datetime, timedelta, timezone
+    
+    limits_service = LimitsService(db)
+    video_service = VideoService(db)
+    
+    # Get user's limits based on role
+    user_limits = limits_service.get_user_limits(user)
+    daily_limit = user_limits.get("daily_videos")
+    
+    # Count videos created today
+    videos_today = video_service.count_videos_today(user.id)
+    
+    # Calculate when the limit resets (next midnight UTC)
+    now = datetime.now(timezone.utc)
+    tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    
+    return {
+        "used": videos_today,
+        "limit": daily_limit,
+        "remaining": max(0, daily_limit - videos_today) if daily_limit is not None else None,
+        "resets_at": tomorrow.isoformat(),
+    }
+
+
+# =============================================================================
 # List Videos
 # =============================================================================
 
