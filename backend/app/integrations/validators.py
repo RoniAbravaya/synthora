@@ -52,6 +52,48 @@ class OpenAIValidator(BaseValidator):
             return self._failure(f"Validation error: {str(e)}", error_code="error")
 
 
+class AnthropicValidator(BaseValidator):
+    """Validator for Anthropic API keys."""
+    
+    provider_name = "Anthropic"
+    
+    async def validate(self) -> ValidationResult:
+        """
+        Validate Anthropic API key by making a simple API call.
+        """
+        try:
+            # Anthropic uses x-api-key header
+            response = await self.client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-3-haiku-20240307",
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                },
+            )
+            
+            if response.status_code == 200:
+                return self._success("Valid Anthropic API key")
+            elif response.status_code == 401:
+                return self._failure("Invalid API key", error_code="invalid_key")
+            elif response.status_code == 400:
+                # 400 can mean valid key but bad request - key is probably valid
+                return self._success("Valid Anthropic API key")
+            else:
+                return self._handle_http_error(response.status_code, response.text)
+                
+        except httpx.TimeoutException:
+            return self._failure("Connection timeout", error_code="timeout")
+        except Exception as e:
+            logger.error(f"Anthropic validation error: {e}")
+            return self._failure(f"Validation error: {str(e)}", error_code="error")
+
+
 # =============================================================================
 # Voice AI Validators
 # =============================================================================
@@ -89,6 +131,51 @@ class ElevenLabsValidator(BaseValidator):
             return self._failure("Connection timeout", error_code="timeout")
         except Exception as e:
             logger.error(f"ElevenLabs validation error: {e}")
+            return self._failure(f"Validation error: {str(e)}", error_code="error")
+
+
+class PlayHTValidator(BaseValidator):
+    """Validator for Play.ht API keys."""
+    
+    provider_name = "Play.ht"
+    
+    async def validate(self) -> ValidationResult:
+        """
+        Validate Play.ht API key.
+        Play.ht uses API key + User ID for authentication.
+        """
+        try:
+            # Play.ht uses X-User-ID and Authorization headers
+            # The api_key might be in format "user_id:api_key"
+            if ":" in self.api_key:
+                user_id, api_key = self.api_key.split(":", 1)
+            else:
+                # Assume just API key, validation will likely fail
+                user_id = ""
+                api_key = self.api_key
+            
+            response = await self.client.get(
+                "https://api.play.ht/api/v2/voices",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "X-User-ID": user_id,
+                },
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                voice_count = len(data) if isinstance(data, list) else 0
+                return self._success(
+                    "Valid Play.ht API key",
+                    details={"voice_count": voice_count},
+                )
+            else:
+                return self._handle_http_error(response.status_code, response.text)
+                
+        except httpx.TimeoutException:
+            return self._failure("Connection timeout", error_code="timeout")
+        except Exception as e:
+            logger.error(f"Play.ht validation error: {e}")
             return self._failure(f"Validation error: {str(e)}", error_code="error")
 
 
@@ -160,6 +247,37 @@ class UnsplashValidator(BaseValidator):
             return self._failure(f"Validation error: {str(e)}", error_code="error")
 
 
+class PixabayValidator(BaseValidator):
+    """Validator for Pixabay API keys."""
+    
+    provider_name = "Pixabay"
+    
+    async def validate(self) -> ValidationResult:
+        """
+        Validate Pixabay API key by searching for a test image.
+        """
+        try:
+            response = await self.client.get(
+                "https://pixabay.com/api/videos/",
+                params={"key": self.api_key, "q": "nature", "per_page": 3},
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                return self._success(
+                    "Valid Pixabay API key",
+                    details={"total_hits": data.get("totalHits", 0)},
+                )
+            else:
+                return self._handle_http_error(response.status_code, response.text)
+                
+        except httpx.TimeoutException:
+            return self._failure("Connection timeout", error_code="timeout")
+        except Exception as e:
+            logger.error(f"Pixabay validation error: {e}")
+            return self._failure(f"Validation error: {str(e)}", error_code="error")
+
+
 # =============================================================================
 # Video AI Validators
 # =============================================================================
@@ -195,6 +313,39 @@ class RunwayValidator(BaseValidator):
                 "Could not validate Runway API key. Service may be unavailable.",
                 error_code="service_unavailable"
             )
+
+
+class HeyGenValidator(BaseValidator):
+    """Validator for HeyGen API keys."""
+    
+    provider_name = "HeyGen"
+    
+    async def validate(self) -> ValidationResult:
+        """
+        Validate HeyGen API key by getting user info.
+        """
+        try:
+            response = await self.client.get(
+                "https://api.heygen.com/v1/user.remaining_quota",
+                headers={"X-Api-Key": self.api_key},
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("error"):
+                    return self._failure(data.get("error"), error_code="api_error")
+                return self._success(
+                    "Valid HeyGen API key",
+                    details={"remaining_quota": data.get("data", {}).get("remaining_quota")},
+                )
+            else:
+                return self._handle_http_error(response.status_code, response.text)
+                
+        except httpx.TimeoutException:
+            return self._failure("Connection timeout", error_code="timeout")
+        except Exception as e:
+            logger.error(f"HeyGen validation error: {e}")
+            return self._failure(f"Validation error: {str(e)}", error_code="error")
 
 
 class SoraValidator(BaseValidator):

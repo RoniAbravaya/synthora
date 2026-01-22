@@ -11,10 +11,14 @@ from app.models.integration import IntegrationProvider
 from app.integrations.base import BaseValidator, ValidationResult
 from app.integrations.validators import (
     OpenAIValidator,
+    AnthropicValidator,
     ElevenLabsValidator,
+    PlayHTValidator,
     PexelsValidator,
     UnsplashValidator,
+    PixabayValidator,
     RunwayValidator,
+    HeyGenValidator,
     SoraValidator,
     VeoValidator,
     LumaValidator,
@@ -38,16 +42,20 @@ logger = logging.getLogger(__name__)
 VALIDATOR_MAP: dict[IntegrationProvider, Type[BaseValidator]] = {
     # Script/Text AI
     IntegrationProvider.OPENAI: OpenAIValidator,
+    IntegrationProvider.ANTHROPIC: AnthropicValidator,
     
     # Voice AI
     IntegrationProvider.ELEVENLABS: ElevenLabsValidator,
+    IntegrationProvider.PLAYHT: PlayHTValidator,
     
     # Stock Media
     IntegrationProvider.PEXELS: PexelsValidator,
     IntegrationProvider.UNSPLASH: UnsplashValidator,
+    IntegrationProvider.PIXABAY: PixabayValidator,
     
     # Video AI
     IntegrationProvider.RUNWAY: RunwayValidator,
+    IntegrationProvider.HEYGEN: HeyGenValidator,
     IntegrationProvider.SORA: SoraValidator,
     IntegrationProvider.VEO: VeoValidator,
     IntegrationProvider.LUMA: LumaValidator,
