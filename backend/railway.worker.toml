@@ -13,6 +13,10 @@ dockerfilePath = "Dockerfile.worker"
 # Queue names must match those in app/workers/scheduler.py
 startCommand = "python -m rq.cli worker --url $REDIS_URL video default analytics posts cleanup"
 
+# Explicitly disable healthcheck - worker is not an HTTP service
+healthcheckPath = ""
+healthcheckTimeout = 0
+
 # Number of replicas
 numReplicas = 1
 
