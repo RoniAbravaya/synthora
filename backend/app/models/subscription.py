@@ -53,8 +53,8 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
     Attributes:
         id: Unique identifier (UUID)
         user_id: Foreign key to user
-        plan: Subscription plan (free/monthly/annual)
-        status: Current subscription status
+        plan: Subscription plan (free/monthly/annual) - stored as string
+        status: Current subscription status - stored as string
         stripe_subscription_id: Stripe subscription ID
         stripe_price_id: Stripe price ID
         current_period_start: Start of current billing period
@@ -80,7 +80,7 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
         doc="Foreign key to user"
     )
     
-    # Plan Details - stored as strings in DB
+    # Plan Details - stored as strings in DB (not PostgreSQL ENUM)
     plan = Column(
         String(20),
         nullable=False,

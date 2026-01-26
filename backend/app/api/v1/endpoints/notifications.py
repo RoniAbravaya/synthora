@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.auth import get_current_active_user, require_admin
 from app.models.user import User
+from app.models.notification import NotificationType
 from app.services.notification import NotificationService
 from app.schemas.notification import (
     NotificationResponse,
@@ -77,7 +78,7 @@ async def get_notifications(
                 id=n.id,
                 notification_type=n.type,
                 title=n.title,
-                message=n.message,
+                message=n.message or "",
                 priority=n.priority,
                 is_read=n.is_read,
                 action_url=n.action_url,
@@ -132,13 +133,13 @@ async def get_notification(
         id=notification.id,
         notification_type=notification.type,
         title=notification.title,
-        message=notification.message,
+        message=notification.message or "",
         priority=notification.priority,
         is_read=notification.is_read,
         is_dismissed=notification.is_dismissed,
         action_url=notification.action_url,
         action_text=notification.action_label,
-        metadata=notification.extra_data or {},
+        metadata=notification.metadata or {},
         created_at=notification.created_at,
         updated_at=notification.updated_at,
     )
@@ -170,13 +171,13 @@ async def mark_notification_read(
         id=notification.id,
         notification_type=notification.type,
         title=notification.title,
-        message=notification.message,
+        message=notification.message or "",
         priority=notification.priority,
         is_read=notification.is_read,
         is_dismissed=notification.is_dismissed,
         action_url=notification.action_url,
         action_text=notification.action_label,
-        metadata=notification.extra_data or {},
+        metadata=notification.metadata or {},
         created_at=notification.created_at,
         updated_at=notification.updated_at,
     )
@@ -227,13 +228,13 @@ async def dismiss_notification(
         id=notification.id,
         notification_type=notification.type,
         title=notification.title,
-        message=notification.message,
+        message=notification.message or "",
         priority=notification.priority,
         is_read=notification.is_read,
         is_dismissed=notification.is_dismissed,
         action_url=notification.action_url,
         action_text=notification.action_label,
-        metadata=notification.extra_data or {},
+        metadata=notification.metadata or {},
         created_at=notification.created_at,
         updated_at=notification.updated_at,
     )

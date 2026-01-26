@@ -36,56 +36,12 @@ router = APIRouter(prefix="/videos", tags=["Videos"])
 
 
 # =============================================================================
-# Daily Limit
-# =============================================================================
-
-@router.get("/daily-limit")
-async def get_daily_limit(
-    user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Get the user's daily video generation limit status.
-    
-    **Returns:**
-    - `used`: Number of videos generated today
-    - `limit`: Maximum videos allowed per day (null if unlimited)
-    - `remaining`: Videos remaining today (null if unlimited)
-    - `resets_at`: When the daily limit resets (UTC midnight)
-    
-    **Requires:** Authentication
-    """
-    from datetime import datetime, timedelta, timezone
-    
-    limits_service = LimitsService(db)
-    video_service = VideoService(db)
-    
-    # Get user's limits based on role
-    user_limits = limits_service.get_user_limits(user)
-    daily_limit = user_limits.get("daily_videos")
-    
-    # Count videos created today
-    videos_today = video_service.count_videos_today(user.id)
-    
-    # Calculate when the limit resets (next midnight UTC)
-    now = datetime.now(timezone.utc)
-    tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-    
-    return {
-        "used": videos_today,
-        "limit": daily_limit,
-        "remaining": max(0, daily_limit - videos_today) if daily_limit is not None else None,
-        "resets_at": tomorrow.isoformat(),
-    }
-
-
-# =============================================================================
 # List Videos
 # =============================================================================
 
 @router.get("", response_model=VideoListResponse)
 async def list_videos(
-    status_filter: Optional[VideoStatus] = Query(default=None, alias="status"),
+    status_filter: Optional[str] = Query(default=None, alias="status"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     user: User = Depends(get_current_active_user),
@@ -191,9 +147,9 @@ async def get_video_status(
         status=video.status,
         progress=video.progress,
         current_step=video.current_step,
-        generation_state=video.generation_state,
+        generation_state=video.generation_config,
         error_message=video.error_message,
-        error_details=video.error_details,
+        error_details=None,  # Not stored as separate field
     )
 
 
@@ -335,10 +291,10 @@ async def retry_video(
             detail="Not authorized to retry this video",
         )
     
-    if video.status not in ["failed"]:
+    if video.status != "failed":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot retry video in status: {video.status.value}",
+            detail=f"Cannot retry video in status: {video.status}",
         )
     
     # Check concurrent limit
@@ -406,6 +362,29 @@ async def delete_video(
     video_service.delete_video(video)
     
     return MessageResponse(message="Video deleted")
+
+
+# =============================================================================
+# Daily Limit
+# =============================================================================
+
+@router.get("/daily-limit", response_model=dict)
+async def get_daily_limit(
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the daily video generation limit for the current user.
+    
+    Returns:
+        - limit: Maximum videos allowed per day (null for unlimited)
+        - used: Videos created today
+        - remaining: Videos remaining today (null for unlimited)
+    
+    **Requires:** Authentication
+    """
+    limits_service = LimitsService(db)
+    return limits_service.get_video_limit_info(user.id)
 
 
 # =============================================================================

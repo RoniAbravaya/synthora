@@ -51,11 +51,11 @@ class Post(Base, UUIDMixin, TimestampMixin):
         user_id: Foreign key to user
         video_id: Foreign key to video
         social_account_id: Foreign key to social account
-        platform: Target platform
+        platform: Target platform (stored as string)
         platform_post_id: Platform-specific post ID
         caption: Post caption/description
         hashtags: List of hashtags
-        status: Current post status
+        status: Current post status (stored as string)
         scheduled_at: When the post is scheduled for
         published_at: When the post was published
         post_url: URL to the post on the platform
@@ -95,7 +95,7 @@ class Post(Base, UUIDMixin, TimestampMixin):
         doc="Foreign key to social account"
     )
     
-    # Platform Info - stored as string in DB
+    # Platform Info - stored as string in DB (not PostgreSQL ENUM)
     platform = Column(
         String(20),
         nullable=False,
@@ -120,7 +120,7 @@ class Post(Base, UUIDMixin, TimestampMixin):
         doc="List of hashtags"
     )
     
-    # Status - stored as string in DB
+    # Status - stored as string in DB (not PostgreSQL ENUM)
     status = Column(
         String(20),
         default="draft",
@@ -189,7 +189,7 @@ class Post(Base, UUIDMixin, TimestampMixin):
     
     @property
     def error_log(self) -> Optional[dict]:
-        """Alias for error_message as dict."""
+        """Get error info as dict."""
         if self.error_message:
             return {"message": self.error_message}
         return None
@@ -255,16 +255,17 @@ class Post(Base, UUIDMixin, TimestampMixin):
         self.platform_post_id = post_id
         self.post_url = post_url
     
-    def mark_failed(self, error_msg: str) -> None:
+    def mark_failed(self, error_message: str, error_details: dict = None) -> None:
         """
         Mark post as failed.
         
         Args:
-            error_msg: Human-readable error message
+            error_message: Human-readable error message
+            error_details: Additional error details
         """
         self.status = "failed"
         self.retry_count += 1
-        self.error_message = error_msg
+        self.error_message = error_message
     
     def cancel(self) -> None:
         """Cancel a scheduled post."""

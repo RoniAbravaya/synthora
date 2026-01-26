@@ -24,13 +24,6 @@ logger = logging.getLogger(__name__)
 
 
 # =========================================================================
-# Platform Mapping
-# =========================================================================
-
-# Platform mapping is now unified - SocialPlatform is used everywhere
-
-
-# =========================================================================
 # Analytics Sync Jobs
 # =========================================================================
 
@@ -56,6 +49,7 @@ def sync_post_analytics_job(post_id: str) -> dict:
         if not post:
             return {"success": False, "error": "Post not found"}
         
+        # Use string comparison
         if post.status != "published":
             return {"success": False, "error": "Post not published"}
         
@@ -68,7 +62,7 @@ def sync_post_analytics_job(post_id: str) -> dict:
                 continue
             
             try:
-                # Get social account for this platform
+                # Get social account for this platform (platform stored as string in DB)
                 social_account = db.query(SocialAccount).filter(
                     SocialAccount.user_id == post.user_id,
                     SocialAccount.platform == platform_name,
@@ -101,12 +95,10 @@ def sync_post_analytics_job(post_id: str) -> dict:
                     loop.close()
                 
                 if fetch_result.success:
-                    # Store analytics
-                    analytics_platform = SOCIAL_TO_ANALYTICS_PLATFORM[social_platform]
-                    
+                    # Store analytics (use platform string directly)
                     analytics_service.store_analytics(
                         post_id=post_uuid,
-                        platform=analytics_platform,
+                        platform=platform_name,
                         platform_post_id=platform_post_id,
                         views=fetch_result.views,
                         likes=fetch_result.likes,
@@ -165,7 +157,7 @@ def sync_user_analytics_job(user_id: str) -> dict:
     try:
         user_uuid = UUID(user_id)
         
-        # Get all published posts
+        # Get all published posts (use string comparison)
         posts = db.query(Post).filter(
             Post.user_id == user_uuid,
             Post.status == "published",
@@ -221,7 +213,7 @@ def daily_analytics_sync_job() -> dict:
     db = SessionLocal()
     
     try:
-        # Get all users with published posts
+        # Get all users with published posts (use string comparison)
         from app.models.user import User
         
         users_with_posts = db.query(User.id).join(Post).filter(
@@ -283,6 +275,7 @@ def sync_channel_analytics_job(user_id: str) -> dict:
         
         for account in accounts:
             try:
+                # Platform is now stored as string
                 platform_name = account.platform
                 
                 # Decrypt tokens
@@ -399,4 +392,3 @@ def queue_user_analytics_sync(user_id: UUID, queue_name: str = "analytics") -> O
     except Exception as e:
         logger.error(f"Failed to queue user analytics sync: {e}")
         return None
-

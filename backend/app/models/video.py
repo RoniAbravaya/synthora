@@ -58,9 +58,9 @@ class Video(Base, UUIDMixin, TimestampMixin):
         template_id: Foreign key to template (optional)
         title: Video title
         prompt: User's input prompt/topic
-        status: Current generation status
+        status: Current generation status (stored as string)
         progress: Overall progress percentage (0-100)
-        current_step: Current step in generation pipeline
+        current_step: Current step in generation pipeline (stored as string)
         video_url: URL to the generated video (GCS)
         thumbnail_url: URL to video thumbnail
         duration: Video duration in seconds
@@ -110,7 +110,7 @@ class Video(Base, UUIDMixin, TimestampMixin):
         doc="User's input prompt/topic"
     )
     
-    # Status - stored as strings in DB
+    # Status - stored as strings in DB (not PostgreSQL ENUM)
     status = Column(
         String(20),
         default="pending",
@@ -245,7 +245,7 @@ class Video(Base, UUIDMixin, TimestampMixin):
     
     @property
     def error_log(self) -> Optional[Dict]:
-        """Alias for error_message as dict."""
+        """Get error info as dict."""
         if self.error_message:
             return {"message": self.error_message}
         return None
@@ -254,3 +254,96 @@ class Video(Base, UUIDMixin, TimestampMixin):
     def settings_snapshot(self) -> Optional[Dict]:
         """Alias for config."""
         return self.config
+    
+    def get_step_status(self, step: GenerationStep) -> Dict[str, Any]:
+        """
+        Get the status of a specific generation step.
+        
+        Args:
+            step: The generation step to check
+            
+        Returns:
+            Dict with status, progress, and any results
+        """
+        if not self.generation_config:
+            return {"status": "pending", "progress": 0, "result": None, "error": None}
+        step_data = self.generation_config.get(step.value, {})
+        return {
+            "status": step_data.get("status", "pending"),
+            "progress": step_data.get("progress", 0),
+            "result": step_data.get("result"),
+            "error": step_data.get("error"),
+        }
+    
+    def update_step(
+        self,
+        step: GenerationStep,
+        status: str,
+        progress: int = 0,
+        result: Any = None,
+        error: str = None
+    ) -> None:
+        """
+        Update the status of a generation step.
+        
+        Args:
+            step: The generation step to update
+            status: New status (pending, processing, completed, failed)
+            progress: Progress percentage for this step
+            result: Any result data from the step
+            error: Error message if failed
+        """
+        if not self.generation_config:
+            self.generation_config = {}
+        
+        self.generation_config[step.value] = {
+            "status": status,
+            "progress": progress,
+            "result": result,
+            "error": error,
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        
+        # Update current step (as string)
+        self.current_step = step.value
+        
+        # Calculate overall progress
+        steps = list(GenerationStep)
+        completed_steps = sum(
+            1 for s in steps
+            if self.generation_config.get(s.value, {}).get("status") == "completed"
+        )
+        self.progress = int((completed_steps / len(steps)) * 100)
+    
+    def get_last_successful_step(self) -> Optional[GenerationStep]:
+        """
+        Get the last successfully completed step.
+        Useful for resuming failed generations.
+        
+        Returns:
+            The last completed step, or None if no steps completed
+        """
+        if not self.generation_config:
+            return None
+        steps = list(GenerationStep)
+        last_completed = None
+        
+        for step in steps:
+            step_data = self.generation_config.get(step.value, {})
+            if step_data.get("status") == "completed":
+                last_completed = step
+            else:
+                break
+        
+        return last_completed
+    
+    def set_error(self, error_message: str, error_details: Dict = None) -> None:
+        """
+        Set error information when generation fails.
+        
+        Args:
+            error_message: Human-readable error message
+            error_details: Additional error details (stack trace, API response, etc.)
+        """
+        self.status = "failed"
+        self.error_message = error_message

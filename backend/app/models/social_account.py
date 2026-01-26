@@ -6,7 +6,7 @@ OAuth tokens are stored encrypted.
 """
 
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional, List
 
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Boolean
@@ -31,6 +31,7 @@ class SocialPlatform(str, enum.Enum):
 class AccountStatus(str, enum.Enum):
     """Social account connection status."""
     CONNECTED = "connected"
+    ACTIVE = "active"
     EXPIRED = "expired"
     REVOKED = "revoked"
     ERROR = "error"
@@ -45,18 +46,18 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
     Attributes:
         id: Unique identifier (UUID)
         user_id: Foreign key to user
-        platform: Social media platform (string)
+        platform: Social media platform (stored as string)
         platform_user_id: Platform-specific account/user ID
-        username: Account username
-        display_name: Display name
+        username: Username on the platform
+        display_name: Display name on the platform
         profile_url: URL to profile
         avatar_url: Profile picture URL
         access_token_encrypted: Encrypted OAuth access token
         refresh_token_encrypted: Encrypted OAuth refresh token
         token_expires_at: When the access token expires
-        scopes: Array of granted OAuth scopes
-        is_active: Whether the account is active
-        status: Connection status
+        scopes: Granted OAuth scopes (array)
+        is_active: Whether account is active
+        status: Account connection status (stored as string)
         last_used_at: When this account was last used
         metadata: Additional metadata (JSON)
         
@@ -76,7 +77,7 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
         doc="Foreign key to user"
     )
     
-    # Platform - stored as string in DB
+    # Platform - stored as string in DB (not PostgreSQL ENUM)
     platform = Column(
         String(20),
         nullable=False,
@@ -84,7 +85,7 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
         doc="Social media platform"
     )
     
-    # Account Info
+    # Account Info - using correct column names from DB
     platform_user_id = Column(
         String(255),
         nullable=False,
@@ -93,12 +94,12 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
     username = Column(
         String(255),
         nullable=True,
-        doc="Account username"
+        doc="Username on the platform"
     )
     display_name = Column(
         String(255),
         nullable=True,
-        doc="Display name"
+        doc="Display name on the platform"
     )
     profile_url = Column(
         String(500),
@@ -128,7 +129,7 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
         doc="When the access token expires"
     )
     
-    # Scopes - Array of strings in DB
+    # Scopes - array in DB
     scopes = Column(
         ARRAY(String(100)),
         nullable=True,
@@ -140,13 +141,13 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
         Boolean,
         default=True,
         nullable=False,
-        doc="Whether the account is active"
+        doc="Whether account is active"
     )
     status = Column(
         String(20),
         default="connected",
         nullable=False,
-        doc="Connection status"
+        doc="Account connection status"
     )
     
     # Last Activity
@@ -156,7 +157,8 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
         doc="When this account was last used for posting"
     )
     
-    # Additional metadata
+    # Additional metadata - column name is 'metadata' in DB
+    # Use a different Python attribute name to avoid conflict with SQLAlchemy's metadata
     extra_metadata = Column(
         "metadata",  # Actual column name in database
         JSONB,
@@ -179,8 +181,8 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
     
     @property
     def account_name(self) -> Optional[str]:
-        """Alias for username or display_name."""
-        return self.username or self.display_name
+        """Alias for username."""
+        return self.username
     
     @property
     def account_avatar(self) -> Optional[str]:
@@ -189,7 +191,7 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
     
     @property
     def account_metadata(self) -> Optional[dict]:
-        """Alias for extra_metadata (renamed to avoid SQLAlchemy conflict)."""
+        """Alias for extra_metadata."""
         return self.extra_metadata
     
     @property
@@ -197,7 +199,11 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
         """Check if the access token has expired."""
         if not self.token_expires_at:
             return False
-        return datetime.utcnow() > self.token_expires_at.replace(tzinfo=None)
+        now = datetime.now(timezone.utc)
+        # Handle both timezone-aware and naive datetimes
+        if self.token_expires_at.tzinfo is None:
+            return datetime.utcnow() > self.token_expires_at
+        return now > self.token_expires_at
     
     @property
     def needs_refresh(self) -> bool:
@@ -207,7 +213,12 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
         """
         if not self.token_expires_at:
             return False
-        time_until_expiry = self.token_expires_at.replace(tzinfo=None) - datetime.utcnow()
+        now = datetime.now(timezone.utc)
+        # Handle both timezone-aware and naive datetimes
+        if self.token_expires_at.tzinfo is None:
+            time_until_expiry = self.token_expires_at - datetime.utcnow()
+        else:
+            time_until_expiry = self.token_expires_at - now
         return time_until_expiry.total_seconds() < 300  # 5 minutes
     
     @property
@@ -221,7 +232,7 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
     
     def mark_used(self) -> None:
         """Update the last_used_at timestamp."""
-        self.last_used_at = datetime.utcnow()
+        self.last_used_at = datetime.now(timezone.utc)
     
     def update_tokens(
         self,
@@ -242,12 +253,3 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
             self.refresh_token_encrypted = refresh_token_encrypted
         if expires_at:
             self.token_expires_at = expires_at
-    
-    def deactivate(self) -> None:
-        """Mark account as inactive."""
-        self.is_active = False
-        self.status = "revoked"
-    
-    def mark_error(self, error_status: str = "error") -> None:
-        """Mark account as having an error."""
-        self.status = error_status

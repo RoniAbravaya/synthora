@@ -114,4 +114,3 @@ class BroadcastResponse(BaseSchema):
     
     message: str
     users_notified: int
-

@@ -21,6 +21,17 @@ if TYPE_CHECKING:
 class NotificationType(str, enum.Enum):
     """
     Types of notifications.
+    
+    - video_generation_complete: Video finished generating
+    - video_generation_failed: Video generation failed
+    - post_published: Post was successfully published
+    - post_failed: Post publishing failed
+    - new_ai_suggestion: New AI suggestion available (Premium)
+    - video_expiring_soon: Video will expire soon (Free users)
+    - subscription_renewed: Subscription was renewed
+    - subscription_payment_failed: Subscription payment failed
+    - subscription_cancelled: Subscription was cancelled
+    - system: System announcement
     """
     VIDEO_GENERATION_COMPLETE = "video_generation_complete"
     VIDEO_GENERATION_FAILED = "video_generation_failed"
@@ -32,10 +43,21 @@ class NotificationType(str, enum.Enum):
     SUBSCRIPTION_PAYMENT_FAILED = "subscription_payment_failed"
     SUBSCRIPTION_CANCELLED = "subscription_cancelled"
     SYSTEM = "system"
+    # Additional types used by notification service
+    VIDEO_COMPLETE = "video_complete"
+    VIDEO_FAILED = "video_failed"
+    SCHEDULED_POST = "scheduled_post"
+    PAYMENT_SUCCESS = "payment_success"
+    PAYMENT_FAILED = "payment_failed"
+    SUBSCRIPTION_EXPIRING = "subscription_expiring"
+    INTEGRATION_ERROR = "integration_error"
+    SOCIAL_DISCONNECT = "social_disconnect"
 
 
 class NotificationPriority(str, enum.Enum):
-    """Priority levels for notifications."""
+    """
+    Priority levels for notifications.
+    """
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
@@ -50,10 +72,10 @@ class Notification(Base, UUIDMixin, TimestampMixin):
     Attributes:
         id: Unique identifier (UUID)
         user_id: Foreign key to user
-        type: Notification type
+        type: Notification type (stored as string in DB)
         title: Short notification title
         message: Notification message
-        priority: Notification priority
+        priority: Notification priority (stored as string in DB)
         is_read: Whether notification has been read
         is_dismissed: Whether notification has been dismissed
         action_url: URL for action button
@@ -75,7 +97,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         doc="Foreign key to user"
     )
     
-    # Notification Info - stored as strings in DB
+    # Notification Info - stored as strings in DB (not PostgreSQL ENUM)
     type = Column(
         String(30),
         nullable=False,
@@ -126,9 +148,8 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         doc="Label for action button"
     )
     
-    # Additional data - use 'extra_data' in Python but maps to 'metadata' column in DB
-    extra_data = Column(
-        "metadata",  # Actual column name in database
+    # Additional data - column name is 'metadata' in DB
+    metadata = Column(
         JSONB,
         nullable=True,
         doc="Additional data (links, IDs, etc.)"
@@ -140,11 +161,21 @@ class Notification(Base, UUIDMixin, TimestampMixin):
     def __repr__(self) -> str:
         return f"<Notification(id={self.id}, type={self.type}, title={self.title})>"
     
-    # Alias for backwards compatibility
+    # Aliases for backwards compatibility with code using enum-style access
+    @property
+    def notification_type(self) -> str:
+        """Alias for type field."""
+        return self.type
+    
+    @property
+    def action_text(self) -> Optional[str]:
+        """Alias for action_label."""
+        return self.action_label
+    
     @property
     def data(self) -> Optional[dict]:
-        """Alias for extra_data."""
-        return self.extra_data
+        """Alias for metadata."""
+        return self.metadata
     
     def mark_read(self) -> None:
         """Mark notification as read."""
@@ -159,10 +190,11 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a video generation complete notification."""
         return Notification(
             user_id=user_id,
-            type="video_generation_complete",
+            type=NotificationType.VIDEO_GENERATION_COMPLETE.value,
             title="Video Ready!",
             message=f"Your video '{video_title}' has been generated successfully.",
-            extra_data={"video_id": str(video_id), "action": "view_video"}
+            priority=NotificationPriority.MEDIUM.value,
+            metadata={"video_id": str(video_id), "action": "view_video"}
         )
     
     @staticmethod
@@ -170,11 +202,11 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a video generation failed notification."""
         return Notification(
             user_id=user_id,
-            type="video_generation_failed",
+            type=NotificationType.VIDEO_GENERATION_FAILED.value,
             title="Video Generation Failed",
             message=f"Your video could not be generated: {error_message}",
-            priority="high",
-            extra_data={"video_id": str(video_id), "action": "retry_video"}
+            priority=NotificationPriority.HIGH.value,
+            metadata={"video_id": str(video_id), "action": "retry_video"}
         )
     
     @staticmethod
@@ -187,15 +219,17 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a post published notification."""
         return Notification(
             user_id=user_id,
-            type="post_published",
+            type=NotificationType.POST_PUBLISHED.value,
             title=f"Posted to {platform.title()}!",
             message=f"Your video has been posted to {platform.title()} successfully.",
+            priority=NotificationPriority.MEDIUM.value,
             action_url=post_url,
             action_label="View Post",
-            extra_data={
+            metadata={
                 "post_id": str(post_id),
                 "platform": platform,
                 "post_url": post_url,
+                "action": "view_post"
             }
         )
     
@@ -209,13 +243,14 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a post failed notification."""
         return Notification(
             user_id=user_id,
-            type="post_failed",
+            type=NotificationType.POST_FAILED.value,
             title=f"Failed to Post to {platform.title()}",
             message=f"Could not post to {platform.title()}: {error_message}",
-            priority="high",
-            extra_data={
+            priority=NotificationPriority.HIGH.value,
+            metadata={
                 "post_id": str(post_id),
                 "platform": platform,
+                "action": "retry_post"
             }
         )
     
@@ -229,14 +264,52 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a video expiring soon notification."""
         return Notification(
             user_id=user_id,
-            type="video_expiring_soon",
+            type=NotificationType.VIDEO_EXPIRING_SOON.value,
             title="Video Expiring Soon",
             message=f"Your video '{video_title}' will expire in {days_remaining} days. Upgrade to Premium for unlimited retention.",
+            priority=NotificationPriority.MEDIUM.value,
             action_label="Upgrade",
-            extra_data={
+            metadata={
                 "video_id": str(video_id),
                 "days_remaining": days_remaining,
+                "action": "upgrade"
             }
+        )
+    
+    @staticmethod
+    def create_subscription_renewed(user_id: str, plan: str, next_billing: str) -> "Notification":
+        """Create a subscription renewed notification."""
+        return Notification(
+            user_id=user_id,
+            type=NotificationType.SUBSCRIPTION_RENEWED.value,
+            title="Subscription Renewed",
+            message=f"Your {plan} subscription has been renewed. Next billing: {next_billing}",
+            priority=NotificationPriority.MEDIUM.value,
+            metadata={"plan": plan, "next_billing": next_billing}
+        )
+    
+    @staticmethod
+    def create_payment_failed(user_id: str) -> "Notification":
+        """Create a payment failed notification."""
+        return Notification(
+            user_id=user_id,
+            type=NotificationType.SUBSCRIPTION_PAYMENT_FAILED.value,
+            title="Payment Failed",
+            message="We couldn't process your subscription payment. Please update your payment method.",
+            priority=NotificationPriority.HIGH.value,
+            metadata={"action": "update_payment"}
+        )
+    
+    @staticmethod
+    def create_subscription_cancelled(user_id: str, end_date: str) -> "Notification":
+        """Create a subscription cancelled notification."""
+        return Notification(
+            user_id=user_id,
+            type=NotificationType.SUBSCRIPTION_CANCELLED.value,
+            title="Subscription Cancelled",
+            message=f"Your subscription has been cancelled. You'll have access until {end_date}.",
+            priority=NotificationPriority.MEDIUM.value,
+            metadata={"end_date": end_date, "action": "resubscribe"}
         )
     
     @staticmethod
@@ -244,7 +317,8 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a system notification."""
         return Notification(
             user_id=user_id,
-            type="system",
+            type=NotificationType.SYSTEM.value,
             title=title,
             message=message,
+            priority=NotificationPriority.LOW.value,
         )
