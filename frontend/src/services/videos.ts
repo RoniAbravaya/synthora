@@ -53,7 +53,7 @@ export const videosService = {
    * Get a specific video.
    */
   get: (id: string) =>
-    apiClient.get<{ video: Video }>(`/videos/${id}`),
+    apiClient.get<Video>(`/videos/${id}`).then(video => ({ video })),
 
   /**
    * Get video generation status.
