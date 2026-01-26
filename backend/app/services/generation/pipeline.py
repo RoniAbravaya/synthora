@@ -128,14 +128,31 @@ class GenerationPipeline:
         """Load user's active integrations grouped by category."""
         integrations = self.integration_service.get_active_integrations(self.video.user_id)
         
+        logger.info(f"Found {len(integrations)} active integrations for user {self.video.user_id}")
+        
         result: Dict[IntegrationCategory, List[Integration]] = {}
         for integration in integrations:
-            category = PROVIDER_CATEGORIES.get(integration.provider)
+            # Try both string and enum lookup for provider category
+            provider_value = integration.provider
+            if hasattr(provider_value, 'value'):
+                provider_value = provider_value.value
+            
+            # Look up category by trying enum first, then string
+            category = None
+            for prov, cat in PROVIDER_CATEGORIES.items():
+                if prov.value == provider_value or prov == provider_value:
+                    category = cat
+                    break
+            
             if category:
                 if category not in result:
                     result[category] = []
                 result[category].append(integration)
+                logger.info(f"Loaded integration: {provider_value} -> category {category.value}")
+            else:
+                logger.warning(f"Unknown provider category for: {provider_value}")
         
+        logger.info(f"Integrations by category: {[c.value for c in result.keys()]}")
         return result
     
     def _get_integration(
