@@ -96,7 +96,7 @@ class IntegrationService:
             and_(
                 Integration.user_id == user_id,
                 Integration.is_active == True,
-                Integration.is_validated == True,
+                Integration.is_valid == True,  # Use actual column name, not property
             )
         ).all()
     
@@ -187,7 +187,7 @@ class IntegrationService:
             provider=provider,
             api_key_encrypted=encrypted_key,
             is_active=True,
-            is_validated=False,  # Will be validated separately
+            is_valid=False,  # Will be validated separately
         )
         
         self.db.add(integration)
@@ -214,9 +214,9 @@ class IntegrationService:
         """
         # Encrypt the new API key
         integration.api_key_encrypted = encrypt_value(new_api_key)
-        integration.is_validated = False  # Needs re-validation
-        integration.validated_at = None
-        integration.error_message = None
+        integration.is_valid = False  # Needs re-validation
+        integration.last_validated_at = None
+        integration.validation_error = None
         
         self.db.commit()
         self.db.refresh(integration)
@@ -241,9 +241,9 @@ class IntegrationService:
         Returns:
             Updated Integration instance
         """
-        integration.is_validated = is_valid
-        integration.validated_at = datetime.utcnow()
-        integration.error_message = error_message if not is_valid else None
+        integration.is_valid = is_valid
+        integration.last_validated_at = datetime.utcnow()
+        integration.validation_error = error_message if not is_valid else None
         
         self.db.commit()
         self.db.refresh(integration)
@@ -428,7 +428,7 @@ class IntegrationService:
         
         return {
             "total_configured": len(integrations),
-            "active_count": sum(1 for i in integrations if i.is_active and i.is_validated),
+            "active_count": sum(1 for i in integrations if i.is_active and i.is_valid),
             "configured_categories": [c.value for c in configured],
             "missing_categories": [c.value for c in missing],
             "can_generate_videos": len(missing) == 0,
