@@ -1,14 +1,21 @@
 # Nixpacks configuration for Synthora Backend
 # Ensures Python is properly detected and installed
+# Note: We only use base python312 (not python312Packages.pip/virtualenv) 
+# because those have cffi dependency that fails on Python 3.12 in Nix
 
 [phases.setup]
-nixPkgs = ["python312", "python312Packages.pip", "python312Packages.virtualenv"]
+nixPkgs = ["python312"]
 
 [phases.install]
 cmds = [
+    "python -m ensurepip --upgrade",
+    "python -m pip install --upgrade pip",
     "python -m venv /opt/venv",
-    ". /opt/venv/bin/activate && pip install -r requirements.txt"
+    "/opt/venv/bin/pip install -r requirements.txt"
 ]
+
+[phases.build]
+cmds = []
 
 [variables]
 PATH = "/opt/venv/bin:${PATH}"
