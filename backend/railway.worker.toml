@@ -4,11 +4,9 @@
 # Deploy this as a separate service in Railway pointing to the same repo.
 
 [build]
-# Use Nixpacks builder (auto-detects Python)
-builder = "nixpacks"
-
-# Build command - install dependencies
-buildCommand = "pip install -r requirements.txt"
+# Use Dockerfile builder to avoid Nixpacks PEP 668 issues
+builder = "dockerfile"
+dockerfilePath = "Dockerfile.worker"
 
 [deploy]
 # Start command - run RQ worker
