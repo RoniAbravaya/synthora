@@ -152,6 +152,53 @@ class LimitsService:
         videos_today = self.video_service.count_videos_today(user_id)
         return max(0, daily_limit - videos_today)
     
+    def get_video_limit_info(self, user_id: UUID) -> dict:
+        """
+        Get video generation limit information for the frontend.
+        
+        Args:
+            user_id: User's UUID
+            
+        Returns:
+            Dictionary with limit, used, remaining, and resets_at
+        """
+        from datetime import timedelta
+        
+        user = self.db.query(User).filter(User.id == user_id).first()
+        
+        if not user:
+            return {
+                "limit": 0,
+                "used": 0,
+                "remaining": 0,
+                "resets_at": None,
+            }
+        
+        limits = self.get_user_limits(user)
+        daily_limit = limits.get("daily_videos")
+        videos_today = self.video_service.count_videos_today(user_id)
+        
+        # Calculate when the limit resets (midnight UTC)
+        now = datetime.utcnow()
+        tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        resets_at = tomorrow.isoformat() + "Z"
+        
+        if daily_limit is None:
+            # Unlimited
+            return {
+                "limit": None,
+                "used": videos_today,
+                "remaining": None,
+                "resets_at": resets_at,
+            }
+        
+        return {
+            "limit": daily_limit,
+            "used": videos_today,
+            "remaining": max(0, daily_limit - videos_today),
+            "resets_at": resets_at,
+        }
+    
     def get_usage_stats(self, user_id: UUID) -> dict:
         """
         Get usage statistics for a user.
