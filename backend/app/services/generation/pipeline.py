@@ -462,6 +462,8 @@ class GenerationPipeline:
             video_ai=self.state.get("video_ai", {}),
             template_config=self.config.template_config,
             aspect_ratio=self.config.aspect_ratio,
+            user_id=str(self.video.user_id),
+            video_id=str(self.video.id),
         )
         
         if result.success:

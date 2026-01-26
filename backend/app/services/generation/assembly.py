@@ -18,6 +18,7 @@ import httpx
 from app.models.integration import IntegrationProvider
 from app.services.generation.pipeline import StepResult
 from app.core.config import get_settings
+from app.services.storage import get_storage_service
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,8 @@ class VideoAssembler:
         video_ai: Dict[str, Any],
         template_config: Dict[str, Any],
         aspect_ratio: str = "9:16",
+        user_id: Optional[str] = None,
+        video_id: Optional[str] = None,
     ) -> StepResult:
         """
         Assemble the final video.
@@ -97,10 +100,15 @@ class VideoAssembler:
             video_ai: AI-generated clips data
             template_config: Template configuration
             aspect_ratio: Target aspect ratio
+            user_id: User ID for cloud storage organization
+            video_id: Video ID for unique filenames
             
         Returns:
             StepResult with assembly result
         """
+        self._user_id = user_id
+        self._video_id = video_id
+        
         try:
             if self.provider == IntegrationProvider.FFMPEG:
                 return await self._assemble_ffmpeg(
@@ -232,9 +240,34 @@ class VideoAssembler:
             file_size = os.path.getsize(output_path)
             duration = self._get_video_duration(ffmpeg_path, output_path)
             
-            # Upload to storage (placeholder - would use GCS in production)
-            # For now, return a placeholder URL
-            video_url = f"file://{output_path}"  # In production, upload to GCS
+            # Upload to cloud storage (GCS)
+            storage_service = get_storage_service()
+            
+            if self._user_id and self._video_id:
+                video_url, is_cloud_url = storage_service.upload_video(
+                    local_path=output_path,
+                    user_id=self._user_id,
+                    video_id=self._video_id,
+                )
+                
+                if is_cloud_url:
+                    logger.info(f"Video uploaded to cloud storage: {video_url}")
+                    # Cleanup local temp file after successful upload
+                    try:
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                    except Exception as e:
+                        logger.warning(f"Failed to cleanup temp directory: {e}")
+                else:
+                    logger.warning(
+                        f"Video saved locally (GCS not configured): {video_url}. "
+                        "Configure GCS_BUCKET_NAME for cloud storage."
+                    )
+            else:
+                # No user_id/video_id provided, use local path
+                video_url = f"file://{output_path}"
+                logger.warning(
+                    "No user_id/video_id provided for upload, using local file path"
+                )
             
             return StepResult(
                 success=True,
@@ -250,8 +283,8 @@ class VideoAssembler:
             )
             
         finally:
-            # Cleanup temp directory (in production, do this after upload)
-            # shutil.rmtree(temp_dir, ignore_errors=True)
+            # Cleanup handled after upload for cloud storage
+            # For local files, keep the temp directory
             pass
     
     def _build_ffmpeg_command(
