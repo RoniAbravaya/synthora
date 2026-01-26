@@ -5,6 +5,7 @@ Handles social media account connections and OAuth flows.
 """
 
 import logging
+import uuid
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 
@@ -153,6 +154,143 @@ async def get_social_account(
 # OAuth Flow
 # =============================================================================
 
+class FirebaseConnectRequest(BaseModel):
+    """Request model for Firebase-based OAuth connection."""
+    access_token: str
+    platform_user_id: str
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+    photo_url: Optional[str] = None
+
+
+@router.post("/connect/{platform}/firebase")
+async def connect_with_firebase(
+    platform: str,
+    request: FirebaseConnectRequest,
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Connect a social account using Firebase OAuth.
+    
+    This endpoint receives the OAuth access token from Firebase (obtained via popup)
+    and creates/updates the social account in the database.
+    
+    Currently supports: youtube (via Google OAuth)
+    """
+    # Validate platform
+    firebase_platforms = ["youtube"]  # Platforms that use Firebase OAuth
+    if platform not in firebase_platforms:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Firebase OAuth not supported for {platform}. Use redirect-based OAuth instead.",
+        )
+    
+    # For YouTube, we need to verify the token and get channel info
+    if platform == "youtube":
+        try:
+            import httpx
+            
+            # Get YouTube channel info to verify the token and get channel details
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    "https://www.googleapis.com/youtube/v3/channels",
+                    params={
+                        "part": "snippet,contentDetails",
+                        "mine": "true",
+                    },
+                    headers={
+                        "Authorization": f"Bearer {request.access_token}",
+                    },
+                )
+                
+                if response.status_code != 200:
+                    logger.error(f"YouTube API error: {response.status_code} - {response.text}")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid YouTube access token or insufficient permissions",
+                    )
+                
+                data = response.json()
+                
+                if not data.get("items"):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="No YouTube channel found for this account",
+                    )
+                
+                channel = data["items"][0]
+                channel_id = channel["id"]
+                channel_title = channel["snippet"]["title"]
+                channel_thumbnail = channel["snippet"]["thumbnails"]["default"]["url"]
+                
+        except httpx.RequestError as e:
+            logger.error(f"Failed to verify YouTube token: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to verify YouTube access token",
+            )
+    
+    # Encrypt the access token for storage
+    from app.core.security import encrypt_value
+    encrypted_token = encrypt_value(request.access_token)
+    
+    # Check if account already exists
+    existing_account = db.query(SocialAccount).filter(
+        SocialAccount.user_id == user.id,
+        SocialAccount.platform == platform,
+        SocialAccount.platform_user_id == channel_id,
+    ).first()
+    
+    if existing_account:
+        # Update existing account
+        existing_account.username = channel_title
+        existing_account.display_name = channel_title
+        existing_account.avatar_url = channel_thumbnail
+        existing_account.access_token_encrypted = encrypted_token
+        existing_account.status = "connected"
+        existing_account.is_active = True
+        
+        db.commit()
+        db.refresh(existing_account)
+        
+        logger.info(f"Updated YouTube account for user {user.id}: {channel_title}")
+        
+        return {
+            "account": account_to_response(existing_account),
+            "message": f"YouTube account '{channel_title}' reconnected successfully",
+        }
+    
+    # Create new account
+    import uuid
+    
+    new_account = SocialAccount(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        platform=platform,
+        platform_user_id=channel_id,
+        username=channel_title,
+        display_name=channel_title,
+        avatar_url=channel_thumbnail,
+        access_token_encrypted=encrypted_token,
+        refresh_token_encrypted=None,  # Firebase doesn't provide refresh tokens
+        scopes=["youtube.upload", "youtube.readonly"],
+        status="connected",
+        is_active=True,
+    )
+    
+    db.add(new_account)
+    db.commit()
+    db.refresh(new_account)
+    
+    logger.info(f"Created YouTube account for user {user.id}: {channel_title}")
+    
+    return {
+        "account": account_to_response(new_account),
+        "message": f"YouTube account '{channel_title}' connected successfully",
+    }
+
+
 @router.post("/connect/{platform}")
 async def initiate_oauth(
     platform: str,
@@ -160,7 +298,9 @@ async def initiate_oauth(
     db: Session = Depends(get_db),
 ):
     """
-    Initiate OAuth flow for a social platform.
+    Initiate OAuth flow for a social platform (redirect-based).
+    
+    For YouTube, use the /connect/youtube/firebase endpoint instead.
     
     Returns an authorization URL that the frontend should redirect the user to.
     
@@ -174,6 +314,13 @@ async def initiate_oauth(
             detail=f"Invalid platform. Must be one of: {', '.join(valid_platforms)}",
         )
     
+    # For YouTube, recommend using Firebase OAuth
+    if platform == "youtube":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="YouTube uses Firebase OAuth. Use the /connect/youtube/firebase endpoint or the frontend popup flow.",
+        )
+    
     # Check if OAuth is configured
     oauth_config = get_oauth_config(platform)
     if not oauth_config:
@@ -185,7 +332,6 @@ async def initiate_oauth(
     # Build the authorization URL
     # This is a simplified version - in production, you'd use the actual OAuth library
     base_urls = {
-        "youtube": "https://accounts.google.com/o/oauth2/v2/auth",
         "tiktok": "https://www.tiktok.com/auth/authorize/",
         "instagram": "https://api.instagram.com/oauth/authorize",
         "facebook": "https://www.facebook.com/v18.0/dialog/oauth",
@@ -209,11 +355,6 @@ async def initiate_oauth(
         "state": state,
         "response_type": "code",
     }
-    
-    # Platform-specific params
-    if platform == "youtube":
-        params["access_type"] = "offline"
-        params["prompt"] = "consent"
     
     auth_url = f"{base_urls[platform]}?{urllib.parse.urlencode(params)}"
     

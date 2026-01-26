@@ -37,7 +37,46 @@ export function useSocialAccount(id: string) {
 }
 
 /**
- * Hook to initiate OAuth flow.
+ * Platforms that use Firebase OAuth (Google-based).
+ */
+const FIREBASE_OAUTH_PLATFORMS: SocialPlatform[] = ["youtube"]
+
+/**
+ * Hook to connect a social account.
+ * Uses Firebase OAuth for Google-based platforms (YouTube),
+ * and redirect-based OAuth for others (TikTok, Instagram, Facebook).
+ */
+export function useConnectAccount() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (platform: SocialPlatform) => {
+      if (FIREBASE_OAUTH_PLATFORMS.includes(platform)) {
+        // Use Firebase OAuth (popup-based)
+        return socialAccountsService.connectWithFirebase(platform)
+      } else {
+        // Use redirect-based OAuth
+        const result = await socialAccountsService.initiateOAuth(platform)
+        window.location.href = result.authorization_url
+        // This will redirect, so we won't return
+        return new Promise(() => {}) // Never resolves
+      }
+    },
+    onSuccess: (data) => {
+      if (data && data.account) {
+        queryClient.invalidateQueries({ queryKey: socialAccountKeys.all })
+        toast.success(`${data.account.platform} account connected!`)
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to connect account")
+    },
+  })
+}
+
+/**
+ * Hook to initiate OAuth flow (legacy - use useConnectAccount instead).
+ * @deprecated Use useConnectAccount for a unified experience
  */
 export function useInitiateOAuth() {
   return useMutation({

@@ -21,7 +21,7 @@ import {
 import { cn, formatRelativeTime } from "@/lib/utils"
 import {
   useSocialAccounts,
-  useInitiateOAuth,
+  useConnectAccount,
   useDisconnectAccount,
   useRefreshToken,
 } from "@/hooks/useSocialAccounts"
@@ -227,7 +227,7 @@ export default function SocialAccountsPage() {
   const [connectingPlatform, setConnectingPlatform] = useState<SocialPlatform | null>(null)
 
   const { data, isLoading } = useSocialAccounts()
-  const initOAuthMutation = useInitiateOAuth()
+  const connectMutation = useConnectAccount()
   const disconnectMutation = useDisconnectAccount()
   const refreshMutation = useRefreshToken()
 
@@ -238,7 +238,9 @@ export default function SocialAccountsPage() {
   const handleConnect = async (platform: SocialPlatform) => {
     setConnectingPlatform(platform)
     try {
-      await initOAuthMutation.mutateAsync(platform)
+      await connectMutation.mutateAsync(platform)
+    } catch {
+      // Error already handled by mutation
     } finally {
       setConnectingPlatform(null)
     }
