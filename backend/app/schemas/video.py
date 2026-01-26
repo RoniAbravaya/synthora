@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.common import BaseSchema, IDSchema, TimestampSchema
 
@@ -20,15 +20,28 @@ from app.schemas.common import BaseSchema, IDSchema, TimestampSchema
 class VideoGenerateRequest(BaseSchema):
     """Request to generate a new video."""
     
-    prompt: str = Field(min_length=1, max_length=2000, description="Main topic/prompt")
+    # Accept both 'prompt' and 'topic' for backwards compatibility
+    prompt: Optional[str] = Field(default=None, max_length=2000, description="Main topic/prompt")
+    topic: Optional[str] = Field(default=None, max_length=2000, description="Alias for prompt")
     template_id: Optional[UUID] = Field(default=None, description="Template to use")
     title: Optional[str] = Field(default=None, max_length=255, description="Video title")
+    custom_instructions: Optional[str] = Field(default=None, max_length=1000, description="Custom instructions")
     
     # Optional configuration overrides
     config_overrides: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Configuration overrides for generation"
     )
+    
+    @model_validator(mode='after')
+    def validate_prompt_or_topic(self) -> 'VideoGenerateRequest':
+        """Ensure at least one of prompt or topic is provided."""
+        if not self.prompt and not self.topic:
+            raise ValueError("Either 'prompt' or 'topic' must be provided")
+        # Normalize: if only topic is provided, copy it to prompt
+        if not self.prompt and self.topic:
+            self.prompt = self.topic
+        return self
 
 
 class VideoGenerationRequest(BaseSchema):

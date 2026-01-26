@@ -36,6 +36,65 @@ router = APIRouter(prefix="/videos", tags=["Videos"])
 
 
 # =============================================================================
+# Daily Limit (must be before /{video_id} routes)
+# =============================================================================
+
+@router.get("/daily-limit", response_model=dict)
+async def get_daily_limit(
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the daily video generation limit for the current user.
+    
+    Returns:
+        - limit: Maximum videos allowed per day (null for unlimited)
+        - used: Videos created today
+        - remaining: Videos remaining today (null for unlimited)
+    
+    **Requires:** Authentication
+    """
+    limits_service = LimitsService(db)
+    return limits_service.get_video_limit_info(user.id)
+
+
+# =============================================================================
+# User Stats (must be before /{video_id} routes)
+# =============================================================================
+
+@router.get("/stats/me", response_model=dict)
+async def get_my_video_stats(
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get video statistics for the current user.
+    
+    **Requires:** Authentication
+    """
+    video_service = VideoService(db)
+    return video_service.get_user_video_stats(user.id)
+
+
+# =============================================================================
+# Admin Endpoints (must be before /{video_id} routes)
+# =============================================================================
+
+@router.get("/admin/stats", response_model=dict)
+async def get_platform_video_stats(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Get platform-wide video statistics.
+    
+    **Requires:** Admin role
+    """
+    video_service = VideoService(db)
+    return video_service.get_platform_video_stats()
+
+
+# =============================================================================
 # List Videos
 # =============================================================================
 
@@ -362,65 +421,6 @@ async def delete_video(
     video_service.delete_video(video)
     
     return MessageResponse(message="Video deleted")
-
-
-# =============================================================================
-# Daily Limit
-# =============================================================================
-
-@router.get("/daily-limit", response_model=dict)
-async def get_daily_limit(
-    user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Get the daily video generation limit for the current user.
-    
-    Returns:
-        - limit: Maximum videos allowed per day (null for unlimited)
-        - used: Videos created today
-        - remaining: Videos remaining today (null for unlimited)
-    
-    **Requires:** Authentication
-    """
-    limits_service = LimitsService(db)
-    return limits_service.get_video_limit_info(user.id)
-
-
-# =============================================================================
-# User Stats
-# =============================================================================
-
-@router.get("/stats/me", response_model=dict)
-async def get_my_video_stats(
-    user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Get video statistics for the current user.
-    
-    **Requires:** Authentication
-    """
-    video_service = VideoService(db)
-    return video_service.get_user_video_stats(user.id)
-
-
-# =============================================================================
-# Admin Endpoints
-# =============================================================================
-
-@router.get("/admin/stats", response_model=dict)
-async def get_platform_video_stats(
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    """
-    Get platform-wide video statistics.
-    
-    **Requires:** Admin role
-    """
-    video_service = VideoService(db)
-    return video_service.get_platform_video_stats()
 
 
 # =============================================================================
