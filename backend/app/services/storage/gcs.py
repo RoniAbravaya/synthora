@@ -52,7 +52,7 @@ class GCSStorageService:
         logger.info(f"GCS Configuration: bucket={bucket_name}, project={project_id}, "
                    f"has_json_creds={has_json_creds}, has_path_creds={has_path_creds}")
         print(f"[GCS] Configuration: bucket={bucket_name}, project={project_id}, "
-              f"has_json_creds={has_json_creds}, has_path_creds={has_path_creds}")
+              f"has_json_creds={has_json_creds}, has_path_creds={has_path_creds}", flush=True)
         
         # Check if GCS is configured
         if not self.settings.GCS_BUCKET_NAME:
@@ -60,7 +60,7 @@ class GCSStorageService:
                    "and will NOT persist across container restarts. "
                    "Configure GCS for production use.")
             logger.warning(msg)
-            print(f"[GCS] WARNING: {msg}")
+            print(f"[GCS] WARNING: {msg}", flush=True)
             self._init_error = "GCS_BUCKET_NAME not configured"
             return False
             
@@ -122,13 +122,13 @@ class GCSStorageService:
         except ImportError as e:
             msg = f"google-cloud-storage package not installed: {e}"
             logger.error(msg)
-            print(f"[GCS] ERROR: {msg}")
+            print(f"[GCS] ERROR: {msg}", flush=True)
             self._init_error = "google-cloud-storage package not installed"
             return False
         except Exception as e:
             msg = f"Failed to initialize GCS: {e}"
             logger.error(msg)
-            print(f"[GCS] ERROR: {msg}")
+            print(f"[GCS] ERROR: {msg}", flush=True)
             self._init_error = str(e)
             return False
             
@@ -162,7 +162,7 @@ class GCSStorageService:
             the URL is a proper cloud URL vs a local file path
         """
         logger.info(f"[GCS] upload_video called: local_path={local_path}, user_id={user_id}, video_id={video_id}")
-        print(f"[GCS] upload_video called: local_path={local_path}, user_id={user_id}, video_id={video_id}")
+        print(f"[GCS] upload_video called: local_path={local_path}, user_id={user_id}, video_id={video_id}", flush=True)
         
         if not os.path.exists(local_path):
             raise FileNotFoundError(f"Video file not found: {local_path}")
@@ -171,7 +171,7 @@ class GCSStorageService:
         if not self._initialize():
             msg = f"GCS not available ({self._init_error}). Returning local file URL for {local_path}"
             logger.warning(msg)
-            print(f"[GCS] WARNING: {msg}")
+            print(f"[GCS] WARNING: {msg}", flush=True)
             return f"file://{local_path}", False
             
         try:

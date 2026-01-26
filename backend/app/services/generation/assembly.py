@@ -106,6 +106,9 @@ class VideoAssembler:
         Returns:
             StepResult with assembly result
         """
+        print(f"[ASSEMBLY] Starting assembly: user_id={user_id}, video_id={video_id}, provider={self.provider}", flush=True)
+        logger.info(f"[ASSEMBLY] Starting assembly: user_id={user_id}, video_id={video_id}, provider={self.provider}")
+        
         self._user_id = user_id
         self._video_id = video_id
         
