@@ -3,11 +3,9 @@
 # This file configures how Railway builds and deploys the backend service.
 
 [build]
-# Use Nixpacks builder (auto-detects Python)
-builder = "nixpacks"
-
-# Build command - just install dependencies
-buildCommand = "pip install -r requirements.txt"
+# Use Dockerfile builder to avoid Nixpacks PEP 668 issues
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 # Start command - run migrations then start FastAPI
