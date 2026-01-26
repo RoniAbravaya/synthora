@@ -6,6 +6,7 @@ Users can have different roles: admin, premium, or free.
 """
 
 import enum
+import uuid as uuid_lib
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
