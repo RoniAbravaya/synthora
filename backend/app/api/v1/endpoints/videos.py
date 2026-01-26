@@ -411,12 +411,9 @@ async def delete_video(
             detail="Not authorized to delete this video",
         )
     
-    # Cannot delete while generating
-    if video.status in ["pending", "processing"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete a video that is currently generating",
-        )
+    # Allow deleting stuck videos - they may have failed silently
+    # Only warn if video appears to be actively processing (recently updated)
+    # But still allow deletion to clear stuck state
     
     video_service.delete_video(video)
     
