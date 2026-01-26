@@ -11,9 +11,9 @@ dockerfilePath = "Dockerfile"
 # Start command - run migrations then start FastAPI
 startCommand = "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 
-# Health check endpoint
-healthcheckPath = "/api/v1/health"
-healthcheckTimeout = 30
+# Health check endpoint - use root /health for faster response
+healthcheckPath = "/health"
+healthcheckTimeout = 120
 
 # Number of replicas
 numReplicas = 1
