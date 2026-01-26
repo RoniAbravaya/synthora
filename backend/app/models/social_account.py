@@ -102,12 +102,12 @@ class SocialAccount(Base, UUIDMixin, TimestampMixin):
         doc="Display name on the platform"
     )
     profile_url = Column(
-        String(500),
+        Text,
         nullable=True,
         doc="URL to profile"
     )
     avatar_url = Column(
-        String(500),
+        Text,
         nullable=True,
         doc="Profile picture URL"
     )

@@ -118,12 +118,12 @@ class Template(Base):
     
     # Media
     thumbnail_url = Column(
-        String(500),
+        Text,
         nullable=True,
         doc="URL to template thumbnail"
     )
     preview_url = Column(
-        String(500),
+        Text,
         nullable=True,
         doc="URL to template preview video"
     )

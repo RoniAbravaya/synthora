@@ -142,7 +142,7 @@ class Post(Base, UUIDMixin, TimestampMixin):
     
     # Platform Response
     post_url = Column(
-        String(500),
+        Text,
         nullable=True,
         doc="URL to the post on the platform"
     )

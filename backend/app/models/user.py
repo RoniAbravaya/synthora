@@ -9,8 +9,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-import uuid as uuid_lib
-from sqlalchemy import Column, String, Boolean, DateTime, text
+from sqlalchemy import Column, String, Boolean, DateTime, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
@@ -98,7 +97,7 @@ class User(Base):
         doc="User's display name"
     )
     photo_url = Column(
-        String(500),
+        Text,
         nullable=True,
         doc="URL to user's profile picture"
     )
