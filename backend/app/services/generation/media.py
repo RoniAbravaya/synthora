@@ -94,7 +94,7 @@ class MediaFetcher:
             else:
                 return StepResult(
                     success=False,
-                    error=f"Unsupported media provider: {self.provider.value}",
+                    error=f"Unsupported media provider: {self.provider}",
                 )
         except Exception as e:
             logger.exception("Media fetching failed")
@@ -156,7 +156,7 @@ class MediaFetcher:
             data={
                 "media_items": [item.to_dict() for item in media_items],
                 "total_items": len(media_items),
-                "provider": self.provider.value,
+                "provider": self.provider,
             },
         )
     
@@ -298,7 +298,7 @@ class MediaFetcher:
             data={
                 "media_items": [item.to_dict() for item in media_items],
                 "total_items": len(media_items),
-                "provider": self.provider.value,
+                "provider": self.provider,
             },
         )
     

@@ -125,7 +125,7 @@ class VideoAssembler:
             else:
                 return StepResult(
                     success=False,
-                    error=f"Unsupported assembly provider: {self.provider.value}",
+                    error=f"Unsupported assembly provider: {self.provider}",
                 )
         except Exception as e:
             logger.exception("Video assembly failed")
@@ -245,7 +245,7 @@ class VideoAssembler:
                     "file_size": file_size,
                     "resolution": resolution,
                     "format": "mp4",
-                    "provider": self.provider.value,
+                    "provider": self.provider,
                 },
             )
             
@@ -411,7 +411,7 @@ class VideoAssembler:
                 "video_url": data.get("url", ""),
                 "render_id": data.get("id"),
                 "duration": data.get("duration", 0),
-                "provider": self.provider.value,
+                "provider": self.provider,
             },
         )
     
@@ -486,7 +486,7 @@ class VideoAssembler:
                 "render_id": data.get("response", {}).get("id"),
                 "status": "queued",
                 "message": "Video rendering started",
-                "provider": self.provider.value,
+                "provider": self.provider,
             },
         )
     
@@ -508,7 +508,7 @@ class VideoAssembler:
             success=True,
             data={
                 "message": "Remotion assembly pending implementation",
-                "provider": self.provider.value,
+                "provider": self.provider,
             },
         )
     
@@ -530,7 +530,7 @@ class VideoAssembler:
             success=True,
             data={
                 "message": "Editframe assembly pending implementation",
-                "provider": self.provider.value,
+                "provider": self.provider,
             },
         )
 

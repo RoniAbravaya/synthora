@@ -163,7 +163,7 @@ class VideoAIGenerator:
                 data={
                     "clips": [],
                     "message": "No AI clips generated (API may be unavailable)",
-                    "provider": self.provider.value,
+                    "provider": self.provider,
                 },
             )
         
@@ -172,7 +172,7 @@ class VideoAIGenerator:
             data={
                 "clips": [clip.to_dict() for clip in generated_clips],
                 "total_clips": len(generated_clips),
-                "provider": self.provider.value,
+                "provider": self.provider,
             },
         )
     
@@ -197,7 +197,7 @@ class VideoAIGenerator:
             data={
                 "clips": [],
                 "message": "Sora API access pending - video AI step skipped",
-                "provider": self.provider.value,
+                "provider": self.provider,
             },
         )
     
@@ -218,7 +218,7 @@ class VideoAIGenerator:
             data={
                 "clips": [],
                 "message": "Veo integration pending - video AI step skipped",
-                "provider": self.provider.value,
+                "provider": self.provider,
             },
         )
     
@@ -273,7 +273,7 @@ class VideoAIGenerator:
             data={
                 "clips": [clip.to_dict() for clip in generated_clips],
                 "total_clips": len(generated_clips),
-                "provider": self.provider.value,
+                "provider": self.provider,
             },
         )
     
@@ -284,14 +284,14 @@ class VideoAIGenerator:
     ) -> StepResult:
         """Placeholder for other video AI providers."""
         
-        logger.info(f"Video AI generation for {self.provider.value} (placeholder)")
+        logger.info(f"Video AI generation for {self.provider} (placeholder)")
         
         return StepResult(
             success=True,
             data={
                 "clips": [],
-                "message": f"{self.provider.value} integration pending",
-                "provider": self.provider.value,
+                "message": f"{self.provider} integration pending",
+                "provider": self.provider,
             },
         )
 

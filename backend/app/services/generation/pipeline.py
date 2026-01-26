@@ -161,7 +161,7 @@ class GenerationPipeline:
         # Try preferred provider first
         if preferred_provider:
             for integration in available:
-                if integration.provider.value == preferred_provider:
+                if integration.provider == preferred_provider:
                     return integration
         
         # Return first available
@@ -324,7 +324,7 @@ class GenerationPipeline:
             self.state["script"] = result.data
             self.integration_service.mark_used(integration)
         
-        result.provider_used = integration.provider.value
+        result.provider_used = integration.provider
         return result
     
     async def _generate_voice(self) -> StepResult:
@@ -361,7 +361,7 @@ class GenerationPipeline:
             self.state["voice"] = result.data
             self.integration_service.mark_used(integration)
         
-        result.provider_used = integration.provider.value
+        result.provider_used = integration.provider
         return result
     
     async def _fetch_media(self) -> StepResult:
@@ -399,7 +399,7 @@ class GenerationPipeline:
             self.state["media"] = result.data
             self.integration_service.mark_used(integration)
         
-        result.provider_used = integration.provider.value
+        result.provider_used = integration.provider
         return result
     
     async def _generate_video_ai(self) -> StepResult:
@@ -434,7 +434,7 @@ class GenerationPipeline:
             self.state["video_ai"] = result.data
             self.integration_service.mark_used(integration)
         
-        result.provider_used = integration.provider.value
+        result.provider_used = integration.provider
         return result
     
     async def _assemble_video(self) -> StepResult:
@@ -468,7 +468,7 @@ class GenerationPipeline:
             self.state["assembly"] = result.data
             self.integration_service.mark_used(integration)
         
-        result.provider_used = integration.provider.value
+        result.provider_used = integration.provider
         return result
     
     def _handle_step_failure(self, step: GenerationStep, result: StepResult) -> None:

@@ -108,7 +108,7 @@ class ScriptGenerator:
             else:
                 return StepResult(
                     success=False,
-                    error=f"Unsupported script provider: {self.provider.value}",
+                    error=f"Unsupported script provider: {self.provider}",
                 )
         except Exception as e:
             logger.exception("Script generation failed")
@@ -180,7 +180,7 @@ class ScriptGenerator:
             success=True,
             data={
                 "script": script.to_dict(),
-                "provider": self.provider.value,
+                "provider": self.provider,
                 "model": "gpt-4-turbo-preview",
                 "raw_response": script_data,
             },

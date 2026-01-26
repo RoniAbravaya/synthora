@@ -95,7 +95,7 @@ class VoiceGenerator:
             else:
                 return StepResult(
                     success=False,
-                    error=f"Unsupported voice provider: {self.provider.value}",
+                    error=f"Unsupported voice provider: {self.provider}",
                 )
         except Exception as e:
             logger.exception("Voice generation failed")
@@ -192,7 +192,7 @@ class VoiceGenerator:
                 "voice_id": voice_id,
                 "narration_text": full_narration,
                 "estimated_duration": estimated_duration,
-                "provider": self.provider.value,
+                "provider": self.provider,
             },
         )
     
