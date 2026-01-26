@@ -8,8 +8,8 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Start command - skip migrations for now and start uvicorn directly
-startCommand = "echo 'Starting Synthora backend on port '$PORT && uvicorn app.main:app --host 0.0.0.0 --port $PORT --log-level info"
+# Start command - use shell to ensure variable expansion works
+startCommand = "sh -c 'echo Starting on port ${PORT:-8000} && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info'"
 
 # Health check endpoint - use root /health for faster response
 healthcheckPath = "/health"
