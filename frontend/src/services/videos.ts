@@ -65,13 +65,21 @@ export const videosService = {
    * Start video generation.
    */
   generate: (data: VideoGenerationRequest) =>
-    apiClient.post<VideoGenerationResponse>("/videos", data),
+    apiClient.post<Video>("/videos", data).then(video => ({ 
+      video, 
+      job_id: video.id, 
+      message: "Video generation started" 
+    })),
 
   /**
    * Retry failed video generation.
    */
   retry: (id: string) =>
-    apiClient.post<VideoGenerationResponse>(`/videos/${id}/retry`),
+    apiClient.post<Video>(`/videos/${id}/retry`).then(video => ({ 
+      video, 
+      job_id: video.id, 
+      message: "Video retry started" 
+    })),
 
   /**
    * Swap integration for a failed step.
