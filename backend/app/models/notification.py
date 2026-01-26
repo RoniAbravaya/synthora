@@ -148,8 +148,9 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         doc="Label for action button"
     )
     
-    # Additional data - column name is 'metadata' in DB
-    metadata = Column(
+    # Additional data - Python attr is 'extra_data', DB column is 'metadata'
+    extra_data = Column(
+        "metadata",  # Actual column name in database
         JSONB,
         nullable=True,
         doc="Additional data (links, IDs, etc.)"
@@ -174,8 +175,13 @@ class Notification(Base, UUIDMixin, TimestampMixin):
     
     @property
     def data(self) -> Optional[dict]:
-        """Alias for metadata."""
-        return self.metadata
+        """Alias for extra_data."""
+        return self.extra_data
+    
+    @property
+    def metadata(self) -> Optional[dict]:
+        """Alias for extra_data (backwards compatibility)."""
+        return self.extra_data
     
     def mark_read(self) -> None:
         """Mark notification as read."""
@@ -194,7 +200,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             title="Video Ready!",
             message=f"Your video '{video_title}' has been generated successfully.",
             priority=NotificationPriority.MEDIUM.value,
-            metadata={"video_id": str(video_id), "action": "view_video"}
+            extra_data={"video_id": str(video_id), "action": "view_video"}
         )
     
     @staticmethod
@@ -206,7 +212,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             title="Video Generation Failed",
             message=f"Your video could not be generated: {error_message}",
             priority=NotificationPriority.HIGH.value,
-            metadata={"video_id": str(video_id), "action": "retry_video"}
+            extra_data={"video_id": str(video_id), "action": "retry_video"}
         )
     
     @staticmethod
@@ -225,7 +231,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             priority=NotificationPriority.MEDIUM.value,
             action_url=post_url,
             action_label="View Post",
-            metadata={
+            extra_data={
                 "post_id": str(post_id),
                 "platform": platform,
                 "post_url": post_url,
@@ -247,7 +253,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             title=f"Failed to Post to {platform.title()}",
             message=f"Could not post to {platform.title()}: {error_message}",
             priority=NotificationPriority.HIGH.value,
-            metadata={
+            extra_data={
                 "post_id": str(post_id),
                 "platform": platform,
                 "action": "retry_post"
@@ -269,7 +275,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             message=f"Your video '{video_title}' will expire in {days_remaining} days. Upgrade to Premium for unlimited retention.",
             priority=NotificationPriority.MEDIUM.value,
             action_label="Upgrade",
-            metadata={
+            extra_data={
                 "video_id": str(video_id),
                 "days_remaining": days_remaining,
                 "action": "upgrade"
@@ -285,7 +291,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             title="Subscription Renewed",
             message=f"Your {plan} subscription has been renewed. Next billing: {next_billing}",
             priority=NotificationPriority.MEDIUM.value,
-            metadata={"plan": plan, "next_billing": next_billing}
+            extra_data={"plan": plan, "next_billing": next_billing}
         )
     
     @staticmethod
@@ -297,7 +303,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             title="Payment Failed",
             message="We couldn't process your subscription payment. Please update your payment method.",
             priority=NotificationPriority.HIGH.value,
-            metadata={"action": "update_payment"}
+            extra_data={"action": "update_payment"}
         )
     
     @staticmethod
@@ -309,7 +315,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
             title="Subscription Cancelled",
             message=f"Your subscription has been cancelled. You'll have access until {end_date}.",
             priority=NotificationPriority.MEDIUM.value,
-            metadata={"end_date": end_date, "action": "resubscribe"}
+            extra_data={"end_date": end_date, "action": "resubscribe"}
         )
     
     @staticmethod

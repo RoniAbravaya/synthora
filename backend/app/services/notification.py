@@ -171,7 +171,7 @@ class NotificationService:
             priority=priority,
             action_url=action_url,
             action_label=action_label,
-            metadata=metadata or {},
+            extra_data=metadata or {},
         )
         
         self.db.add(notification)
@@ -200,7 +200,7 @@ class NotificationService:
             priority=NotificationPriority.HIGH.value,
             action_url=f"/videos/{video_id}",
             action_label="View Video",
-            metadata={"video_id": str(video_id)},
+            extra_data={"video_id": str(video_id)},
         )
     
     def notify_video_failed(
@@ -219,7 +219,7 @@ class NotificationService:
             priority=NotificationPriority.HIGH.value,
             action_url=f"/videos/{video_id}",
             action_label="View Details",
-            metadata={"video_id": str(video_id), "error": error_message},
+            extra_data={"video_id": str(video_id), "error": error_message},
         )
     
     def notify_post_published(
@@ -238,7 +238,7 @@ class NotificationService:
             priority=NotificationPriority.MEDIUM.value,
             action_url=f"/posts/{post_id}",
             action_label="View Post",
-            metadata={"post_id": str(post_id), "platforms": platforms},
+            extra_data={"post_id": str(post_id), "platforms": platforms},
         )
     
     def notify_post_failed(
@@ -257,7 +257,7 @@ class NotificationService:
             priority=NotificationPriority.HIGH.value,
             action_url=f"/posts/{post_id}",
             action_label="View Details",
-            metadata={"post_id": str(post_id), "platform": platform, "error": error_message},
+            extra_data={"post_id": str(post_id), "platform": platform, "error": error_message},
         )
     
     def notify_scheduled_post_reminder(
@@ -276,7 +276,7 @@ class NotificationService:
             priority=NotificationPriority.LOW.value,
             action_url=f"/posts/{post_id}",
             action_label="View Post",
-            metadata={"post_id": str(post_id)},
+            extra_data={"post_id": str(post_id)},
         )
     
     def notify_payment_success(
@@ -360,7 +360,7 @@ class NotificationService:
             priority=NotificationPriority.HIGH.value,
             action_url="/settings/integrations",
             action_label="Fix Integration",
-            metadata={"integration": integration_name, "error": error_message},
+            extra_data={"integration": integration_name, "error": error_message},
         )
     
     def notify_social_account_disconnected(
@@ -377,7 +377,7 @@ class NotificationService:
             priority=NotificationPriority.HIGH.value,
             action_url="/settings/social-accounts",
             action_label="Reconnect",
-            metadata={"platform": platform},
+            extra_data={"platform": platform},
         )
     
     def notify_welcome(self, user_id: UUID, user_name: str) -> Notification:
