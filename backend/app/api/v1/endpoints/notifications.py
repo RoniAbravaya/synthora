@@ -139,7 +139,7 @@ async def get_notification(
         is_dismissed=notification.is_dismissed,
         action_url=notification.action_url,
         action_text=notification.action_label,
-        metadata=notification.metadata or {},
+        metadata=notification.extra_data or {},
         created_at=notification.created_at,
         updated_at=notification.updated_at,
     )
@@ -177,7 +177,7 @@ async def mark_notification_read(
         is_dismissed=notification.is_dismissed,
         action_url=notification.action_url,
         action_text=notification.action_label,
-        metadata=notification.metadata or {},
+        metadata=notification.extra_data or {},
         created_at=notification.created_at,
         updated_at=notification.updated_at,
     )
@@ -234,7 +234,7 @@ async def dismiss_notification(
         is_dismissed=notification.is_dismissed,
         action_url=notification.action_url,
         action_text=notification.action_label,
-        metadata=notification.metadata or {},
+        metadata=notification.extra_data or {},
         created_at=notification.created_at,
         updated_at=notification.updated_at,
     )

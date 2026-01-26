@@ -178,10 +178,8 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Alias for extra_data."""
         return self.extra_data
     
-    @property
-    def metadata(self) -> Optional[dict]:
-        """Alias for extra_data (backwards compatibility)."""
-        return self.extra_data
+    # Note: Cannot use 'metadata' as property name - it's reserved by SQLAlchemy
+    # Use 'extra_data' or 'data' instead
     
     def mark_read(self) -> None:
         """Mark notification as read."""
