@@ -159,56 +159,81 @@ class VideoAssembler:
     ) -> StepResult:
         """Assemble video using FFmpeg."""
         
+        print(f"[ASSEMBLY] FFmpeg assembly starting...", flush=True)
+        
         # Check FFmpeg availability
         ffmpeg_path = self.settings.FFMPEG_PATH or shutil.which("ffmpeg")
         if not ffmpeg_path:
+            print(f"[ASSEMBLY] ERROR: FFmpeg not found!", flush=True)
             return StepResult(
                 success=False,
                 error="FFmpeg not found on system",
             )
         
+        print(f"[ASSEMBLY] FFmpeg found at: {ffmpeg_path}", flush=True)
+        
         # Create temporary directory for processing
         temp_dir = tempfile.mkdtemp(prefix="synthora_")
+        print(f"[ASSEMBLY] Temp directory: {temp_dir}", flush=True)
         
         try:
             # Get resolution from aspect ratio
             resolution = self._get_resolution(aspect_ratio)
+            print(f"[ASSEMBLY] Resolution: {resolution}, aspect_ratio: {aspect_ratio}", flush=True)
             
             # Save audio file
             audio_path = os.path.join(temp_dir, "voice.mp3")
+            has_audio = False
             if voice.get("audio_base64"):
                 audio_data = base64.b64decode(voice["audio_base64"])
                 with open(audio_path, "wb") as f:
                     f.write(audio_data)
+                has_audio = True
+                print(f"[ASSEMBLY] Audio saved: {len(audio_data)} bytes", flush=True)
+            else:
+                print(f"[ASSEMBLY] No audio_base64 in voice data", flush=True)
             
             # Download media files
             media_files = []
             media_items = media.get("media_items", [])
+            print(f"[ASSEMBLY] Media items count: {len(media_items)}", flush=True)
             
             for i, item in enumerate(media_items):
                 url = item.get("url")
                 if not url:
+                    print(f"[ASSEMBLY] Media item {i} has no URL, skipping", flush=True)
                     continue
                 
                 ext = "mp4" if item.get("type") == "video" else "jpg"
                 media_path = os.path.join(temp_dir, f"media_{i}.{ext}")
                 
+                print(f"[ASSEMBLY] Downloading media {i}: {url[:100]}...", flush=True)
+                
                 # Download the file
-                response = await self.client.get(url)
-                if response.status_code == 200:
-                    with open(media_path, "wb") as f:
-                        f.write(response.content)
-                    media_files.append({
-                        "path": media_path,
-                        "type": item.get("type"),
-                        "duration": item.get("duration", 5),
-                    })
+                try:
+                    response = await self.client.get(url)
+                    if response.status_code == 200:
+                        with open(media_path, "wb") as f:
+                            f.write(response.content)
+                        media_files.append({
+                            "path": media_path,
+                            "type": item.get("type"),
+                            "duration": item.get("duration", 5),
+                        })
+                        print(f"[ASSEMBLY] Downloaded media {i}: {len(response.content)} bytes, type={item.get('type')}", flush=True)
+                    else:
+                        print(f"[ASSEMBLY] Failed to download media {i}: HTTP {response.status_code}", flush=True)
+                except Exception as e:
+                    print(f"[ASSEMBLY] Error downloading media {i}: {e}", flush=True)
             
             if not media_files:
+                print(f"[ASSEMBLY] ERROR: No media files to assemble!", flush=True)
                 return StepResult(
                     success=False,
                     error="No media files to assemble",
                 )
+            
+            print(f"[ASSEMBLY] Successfully downloaded {len(media_files)} media files", flush=True)
             
             # Create video from media
             output_path = os.path.join(temp_dir, "output.mp4")
@@ -224,6 +249,9 @@ class VideoAssembler:
                 template_config,
             )
             
+            print(f"[ASSEMBLY] FFmpeg command: {' '.join(cmd[:20])}...", flush=True)
+            logger.info(f"FFmpeg full command: {' '.join(cmd)}")
+            
             # Run FFmpeg
             process = subprocess.run(
                 cmd,
@@ -232,11 +260,19 @@ class VideoAssembler:
                 timeout=300,
             )
             
+            print(f"[ASSEMBLY] FFmpeg returncode: {process.returncode}", flush=True)
+            
             if process.returncode != 0:
+                # Log full error for debugging
+                stderr_lines = process.stderr.split('\n')
+                # Get last 20 lines of stderr which usually contain the actual error
+                error_summary = '\n'.join(stderr_lines[-20:]) if len(stderr_lines) > 20 else process.stderr
+                print(f"[ASSEMBLY] FFmpeg FAILED! Last error lines:\n{error_summary}", flush=True)
+                logger.error(f"FFmpeg failed. Full stderr: {process.stderr}")
                 return StepResult(
                     success=False,
-                    error=f"FFmpeg failed: {process.stderr[:500]}",
-                    error_details={"stderr": process.stderr, "stdout": process.stdout},
+                    error=f"FFmpeg failed: {error_summary[:500]}",
+                    error_details={"stderr": process.stderr[-2000:], "stdout": process.stdout[-500:]},
                 )
             
             # Get output file info
