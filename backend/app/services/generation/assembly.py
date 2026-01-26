@@ -291,16 +291,27 @@ class VideoAssembler:
                 
                 if is_cloud_url:
                     logger.info(f"Video uploaded to cloud storage: {video_url}")
+                    print(f"[ASSEMBLY] Video uploaded to cloud: {video_url[:100]}...", flush=True)
                     # Cleanup local temp file after successful upload
                     try:
                         shutil.rmtree(temp_dir, ignore_errors=True)
                     except Exception as e:
                         logger.warning(f"Failed to cleanup temp directory: {e}")
                 else:
-                    logger.warning(
-                        f"Video saved locally (GCS not configured): {video_url}. "
-                        "Configure GCS_BUCKET_NAME for cloud storage."
-                    )
+                    # Check if GCS was configured but upload failed, or not configured
+                    init_error = storage_service.get_init_error()
+                    if init_error:
+                        logger.warning(
+                            f"Video saved locally (GCS error: {init_error}): {video_url}. "
+                            "Check GCS configuration."
+                        )
+                        print(f"[ASSEMBLY] GCS not available: {init_error}", flush=True)
+                    else:
+                        logger.warning(
+                            f"Video saved locally (GCS upload failed): {video_url}. "
+                            "Check worker logs for GCS errors."
+                        )
+                        print(f"[ASSEMBLY] GCS upload failed, using local path", flush=True)
             else:
                 # No user_id/video_id provided, use local path
                 video_url = f"file://{output_path}"

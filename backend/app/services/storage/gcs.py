@@ -181,21 +181,37 @@ class GCSStorageService:
             extension = Path(local_path).suffix or ".mp4"
             blob_name = f"videos/{user_id}/{date_str}/{video_id}{extension}"
             
+            print(f"[GCS] Uploading to blob: {blob_name}", flush=True)
+            
             # Upload to GCS
             blob = self._bucket.blob(blob_name)
             blob.upload_from_filename(local_path, content_type=content_type)
             
-            # Make the blob publicly readable
-            # In production, you might want to use signed URLs instead
-            blob.make_public()
+            print(f"[GCS] Upload complete, generating URL...", flush=True)
             
-            public_url = blob.public_url
-            logger.info(f"Video uploaded to GCS: {public_url}")
+            # For buckets with Uniform bucket-level access, we can't use make_public()
+            # Instead, generate a signed URL for temporary access, or use public URL
+            # if bucket is configured for public access at IAM level.
+            # 
+            # Option 1: Use signed URL (works with any bucket configuration)
+            # Option 2: Use public URL (requires bucket IAM: allUsers -> Storage Object Viewer)
             
-            return public_url, True
+            # Generate a long-lived signed URL (7 days)
+            # This works regardless of bucket ACL settings
+            signed_url = blob.generate_signed_url(
+                expiration=timedelta(days=7),
+                method="GET",
+            )
+            
+            logger.info(f"Video uploaded to GCS: {blob_name}")
+            print(f"[GCS] Video uploaded successfully: {blob_name}", flush=True)
+            
+            return signed_url, True
             
         except Exception as e:
-            logger.error(f"Failed to upload video to GCS: {e}")
+            error_msg = str(e)
+            logger.error(f"Failed to upload video to GCS: {error_msg}")
+            print(f"[GCS] ERROR uploading: {error_msg}", flush=True)
             # Fall back to local URL
             return f"file://{local_path}", False
             
@@ -225,12 +241,16 @@ class GCSStorageService:
             
             blob = self._bucket.blob(blob_name)
             blob.upload_from_filename(local_path, content_type=content_type)
-            blob.make_public()
             
-            public_url = blob.public_url
-            logger.info(f"Thumbnail uploaded to GCS: {public_url}")
+            # Generate a long-lived signed URL (7 days)
+            signed_url = blob.generate_signed_url(
+                expiration=timedelta(days=7),
+                method="GET",
+            )
             
-            return public_url, True
+            logger.info(f"Thumbnail uploaded to GCS: {blob_name}")
+            
+            return signed_url, True
             
         except Exception as e:
             logger.error(f"Failed to upload thumbnail to GCS: {e}")
