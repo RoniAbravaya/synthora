@@ -36,7 +36,12 @@ class Settings(BaseSettings):
     APP_NAME: str = "Synthora"
     APP_ENV: str = Field(default="development", description="development, staging, production")
     DEBUG: bool = Field(default=True, description="Enable debug mode")
-    SECRET_KEY: str = Field(..., min_length=32, description="Secret key for encryption")
+    # SECRET_KEY is required in production but has a dev default to allow startup
+    SECRET_KEY: str = Field(
+        default="dev-secret-key-change-in-production-min-32-chars",
+        min_length=32,
+        description="Secret key for encryption - MUST be changed in production"
+    )
     
     # URLs
     BACKEND_URL: str = Field(default="http://localhost:8000", description="Backend API URL")
@@ -255,5 +260,24 @@ def get_settings() -> Settings:
     Returns:
         Settings: Application settings instance
     """
-    return Settings()
+    import logging
+    import sys
+    
+    try:
+        settings = Settings()
+    except Exception as e:
+        # Log the error clearly and exit
+        print(f"FATAL: Failed to load settings: {e}", file=sys.stderr)
+        print("Make sure all required environment variables are set.", file=sys.stderr)
+        raise
+    
+    # Warn about insecure SECRET_KEY
+    if settings.SECRET_KEY.startswith("dev-secret-key"):
+        logger = logging.getLogger(__name__)
+        if settings.is_production:
+            logger.error("SECURITY WARNING: Using default SECRET_KEY in production! Set a secure SECRET_KEY environment variable.")
+        else:
+            logger.warning("Using default SECRET_KEY - set a secure value for production.")
+    
+    return settings
 
