@@ -397,6 +397,21 @@ class IntegrationService:
         missing = self.get_missing_categories(user_id)
         return len(missing) == 0
     
+    def check_minimum_integrations(self, user_id: UUID) -> tuple[bool, List[str]]:
+        """
+        Check if user has the minimum required integrations for video generation.
+        
+        Args:
+            user_id: User's UUID
+            
+        Returns:
+            Tuple of (has_required: bool, missing_categories: list of category names)
+        """
+        missing = self.get_missing_categories(user_id)
+        missing_names = [cat.value for cat in missing]
+        has_required = len(missing) == 0
+        return has_required, missing_names
+    
     def get_integration_status(self, user_id: UUID) -> Dict[str, Any]:
         """
         Get comprehensive integration status for a user.
