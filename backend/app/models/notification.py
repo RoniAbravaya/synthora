@@ -138,7 +138,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
     
     # Action
     action_url = Column(
-        String(500),
+        Text,
         nullable=True,
         doc="URL for action button"
     )

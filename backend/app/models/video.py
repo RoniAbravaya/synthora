@@ -132,14 +132,14 @@ class Video(Base, UUIDMixin, TimestampMixin):
     
     # Output
     video_url = Column(
-        String(500),
+        Text,
         nullable=True,
-        doc="URL to the generated video (GCS)"
+        doc="URL to the generated video (GCS signed URL)"
     )
     thumbnail_url = Column(
-        String(500),
+        Text,
         nullable=True,
-        doc="URL to video thumbnail"
+        doc="URL to video thumbnail (GCS signed URL)"
     )
     duration = Column(
         Float,
