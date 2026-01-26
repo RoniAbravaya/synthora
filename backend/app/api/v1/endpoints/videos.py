@@ -421,6 +421,71 @@ async def delete_video(
 
 
 # =============================================================================
+# Download Video
+# =============================================================================
+
+@router.get("/{video_id}/download")
+async def download_video(
+    video_id: UUID,
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get download URL for a video.
+    
+    Redirects to the video URL (GCS) or returns an error if video
+    is not available for download.
+    
+    **Path Parameters:**
+    - `video_id`: UUID of the video
+    
+    **Requires:** Authentication (must own the video)
+    """
+    from fastapi.responses import RedirectResponse
+    
+    video_service = VideoService(db)
+    video = video_service.get_by_id(video_id)
+    
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video not found",
+        )
+    
+    if video.user_id != user.id and user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to download this video",
+        )
+    
+    # Check if video is completed
+    if video.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Video is not ready for download. Status: {video.status}",
+        )
+    
+    # Check if video URL exists
+    if not video.video_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video file not available",
+        )
+    
+    # Check if it's a cloud URL
+    if video.video_url.startswith("file://"):
+        # Local file - not accessible via HTTP
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Video is stored locally and cannot be downloaded. Please configure cloud storage (GCS).",
+        )
+    
+    # Redirect to the video URL (GCS public URL)
+    logger.info(f"Redirecting to video URL: {video.video_url}")
+    return RedirectResponse(url=video.video_url, status_code=302)
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
