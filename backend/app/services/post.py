@@ -52,8 +52,8 @@ class PostService:
     def get_user_posts(
         self,
         user_id: UUID,
-        status: Optional[PostStatus] = None,
-        platform: Optional[SocialPlatform] = None,
+        status: Optional[str] = None,
+        platform: Optional[str] = None,
         skip: int = 0,
         limit: int = 20,
     ) -> tuple[List[Post], int]:
@@ -62,8 +62,8 @@ class PostService:
         
         Args:
             user_id: User's UUID
-            status: Filter by status
-            platform: Filter by platform
+            status: Filter by status (string)
+            platform: Filter by platform (string)
             skip: Pagination offset
             limit: Pagination limit
             
@@ -73,10 +73,14 @@ class PostService:
         query = self.db.query(Post).filter(Post.user_id == user_id)
         
         if status:
-            query = query.filter(Post.status == status)
+            # Handle both enum and string input
+            status_value = status.value if hasattr(status, 'value') else status
+            query = query.filter(Post.status == status_value)
         
         if platform:
-            query = query.filter(Post.platforms.contains([platform.value]))
+            # Handle both enum and string input
+            platform_value = platform.value if hasattr(platform, 'value') else platform
+            query = query.filter(Post.platforms.contains([platform_value]))
         
         total = query.count()
         
@@ -104,7 +108,7 @@ class PostService:
         query = self.db.query(Post).filter(
             and_(
                 Post.user_id == user_id,
-                Post.status == PostStatus.SCHEDULED,
+                Post.status == "scheduled",
             )
         )
         
@@ -130,7 +134,7 @@ class PostService:
         
         return self.db.query(Post).filter(
             and_(
-                Post.status == PostStatus.SCHEDULED,
+                Post.status == "scheduled",
                 Post.scheduled_at <= now,
             )
         ).order_by(Post.scheduled_at.asc()).limit(limit).all()
@@ -188,7 +192,7 @@ class PostService:
                     "id": str(post.id),
                     "video_id": str(post.video_id),
                     "title": post.title,
-                    "status": post.status.value,
+                    "status": post.status,  # Already a string
                     "platforms": post.platforms,
                     "scheduled_at": post.scheduled_at.isoformat() if post.scheduled_at else None,
                     "published_at": post.published_at.isoformat() if post.published_at else None,
@@ -240,14 +244,14 @@ class PostService:
         if video.user_id != user_id:
             raise ValueError("Not authorized to post this video")
         
-        if video.status != VideoStatus.COMPLETED:
+        if video.status != "completed":
             raise ValueError("Video must be completed before posting")
         
-        # Determine initial status
+        # Determine initial status (use string values)
         if scheduled_at:
-            status = PostStatus.SCHEDULED
+            status = "scheduled"
         else:
-            status = PostStatus.DRAFT
+            status = "draft"
         
         # Initialize platform statuses
         platform_status = {
@@ -300,7 +304,7 @@ class PostService:
         Returns:
             Updated Post instance
         """
-        if post.status in [PostStatus.PUBLISHING, PostStatus.PUBLISHED]:
+        if post.status in ["publishing", "published"]:
             raise ValueError("Cannot update a post that is publishing or published")
         
         if title is not None:
@@ -326,8 +330,8 @@ class PostService:
         
         if scheduled_at is not None:
             post.scheduled_at = scheduled_at
-            if scheduled_at and post.status == PostStatus.DRAFT:
-                post.status = PostStatus.SCHEDULED
+            if scheduled_at and post.status == "draft":
+                post.status = "scheduled"
         
         if platform_overrides is not None:
             post.platform_overrides = platform_overrides
@@ -345,7 +349,7 @@ class PostService:
         Args:
             post: Post to delete
         """
-        if post.status == PostStatus.PUBLISHING:
+        if post.status == "publishing":
             raise ValueError("Cannot delete a post that is currently publishing")
         
         post_id = post.id
@@ -369,10 +373,10 @@ class PostService:
         Returns:
             Updated Post instance
         """
-        if post.status not in [PostStatus.DRAFT, PostStatus.SCHEDULED, PostStatus.PARTIALLY_PUBLISHED]:
-            raise ValueError(f"Cannot publish post in status: {post.status.value}")
+        if post.status not in ["draft", "scheduled", "partially_published"]:
+            raise ValueError(f"Cannot publish post in status: {post.status}")
         
-        post.status = PostStatus.PUBLISHING
+        post.status = "publishing"
         
         self.db.commit()
         self.db.refresh(post)
@@ -382,7 +386,7 @@ class PostService:
     def update_platform_status(
         self,
         post: Post,
-        platform: SocialPlatform,
+        platform: str,
         status: str,
         post_id: Optional[str] = None,
         post_url: Optional[str] = None,
@@ -393,7 +397,7 @@ class PostService:
         
         Args:
             post: Post to update
-            platform: Platform to update
+            platform: Platform to update (string)
             status: New status (pending, publishing, published, failed)
             post_id: Platform-specific post ID
             post_url: URL to the post
@@ -405,7 +409,10 @@ class PostService:
         if post.platform_status is None:
             post.platform_status = {}
         
-        post.platform_status[platform.value] = {
+        # Handle both enum and string input
+        platform_value = platform.value if hasattr(platform, 'value') else platform
+        
+        post.platform_status[platform_value] = {
             "status": status,
             "post_id": post_id,
             "post_url": post_url,
@@ -429,14 +436,14 @@ class PostService:
         statuses = [s.get("status") for s in post.platform_status.values()]
         
         if all(s == "published" for s in statuses):
-            post.status = PostStatus.PUBLISHED
+            post.status = "published"
             post.published_at = datetime.utcnow()
         elif all(s == "failed" for s in statuses):
-            post.status = PostStatus.FAILED
+            post.status = "failed"
         elif any(s == "published" for s in statuses) and any(s == "failed" for s in statuses):
-            post.status = PostStatus.PARTIALLY_PUBLISHED
+            post.status = "partially_published"
         elif any(s == "publishing" for s in statuses):
-            post.status = PostStatus.PUBLISHING
+            post.status = "publishing"
     
     def complete_publishing(
         self,
@@ -493,7 +500,7 @@ class PostService:
         by_status = {}
         for status in PostStatus:
             count = self.db.query(Post).filter(
-                and_(Post.user_id == user_id, Post.status == status)
+                and_(Post.user_id == user_id, Post.status == status.value)
             ).count()
             by_status[status.value] = count
         
@@ -503,7 +510,7 @@ class PostService:
         scheduled_this_week = self.db.query(Post).filter(
             and_(
                 Post.user_id == user_id,
-                Post.status == PostStatus.SCHEDULED,
+                Post.status == "scheduled",
                 Post.scheduled_at >= week_start,
                 Post.scheduled_at <= week_end,
             )

@@ -218,7 +218,7 @@ async def create_post(
         )
         
         # If scheduled, enqueue the job
-        if post.scheduled_at and post.status == PostStatus.SCHEDULED:
+        if post.scheduled_at and post.status == "scheduled":
             scheduler = get_scheduler()
             scheduler.enqueue_scheduled_post(post.id, post.scheduled_at)
         
@@ -369,7 +369,7 @@ async def publish_post(
             detail="Not authorized to publish this post",
         )
     
-    if post.status not in [PostStatus.DRAFT, PostStatus.SCHEDULED]:
+    if post.status not in ["draft", "scheduled"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot publish post in status: {post.status.value}",

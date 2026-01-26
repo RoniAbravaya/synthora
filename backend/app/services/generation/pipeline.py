@@ -181,7 +181,7 @@ class GenerationPipeline:
         # Update video status
         self.video_service.update_status(
             self.video,
-            VideoStatus.PROCESSING,
+            "processing",
             progress=0,
         )
         
@@ -207,7 +207,7 @@ class GenerationPipeline:
                 progress_start, _ = self.STEP_PROGRESS[step]
                 self.video_service.update_status(
                     self.video,
-                    VideoStatus.PROCESSING,
+                    "processing",
                     current_step=step,
                     progress=progress_start,
                 )
@@ -233,7 +233,7 @@ class GenerationPipeline:
                 # Update overall progress
                 self.video_service.update_status(
                     self.video,
-                    VideoStatus.PROCESSING,
+                    "processing",
                     progress=progress_end,
                 )
             

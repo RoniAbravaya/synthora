@@ -8,10 +8,9 @@ import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from uuid import UUID
-from enum import Enum
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc
+from sqlalchemy import and_, or_, desc, func
 
 from app.models.notification import Notification, NotificationType, NotificationPriority
 from app.models.user import User
@@ -46,7 +45,7 @@ class NotificationService:
     def get_user_notifications(
         self,
         user_id: UUID,
-        notification_type: Optional[NotificationType] = None,
+        notification_type: Optional[str] = None,
         include_read: bool = True,
         include_dismissed: bool = False,
         limit: int = 50,
@@ -57,7 +56,7 @@ class NotificationService:
         
         Args:
             user_id: User UUID
-            notification_type: Optional filter by type
+            notification_type: Optional filter by type (string or enum)
             include_read: Include read notifications
             include_dismissed: Include dismissed notifications
             limit: Maximum number of notifications
@@ -71,7 +70,9 @@ class NotificationService:
         )
         
         if notification_type:
-            query = query.filter(Notification.notification_type == notification_type)
+            # Handle both string and enum input
+            type_value = notification_type.value if hasattr(notification_type, 'value') else notification_type
+            query = query.filter(Notification.type == type_value)
         
         if not include_dismissed:
             query = query.filter(Notification.is_dismissed == False)
@@ -79,11 +80,8 @@ class NotificationService:
         if not include_read:
             query = query.filter(Notification.is_read == False)
         
-        # Order by priority (high first) then by creation date (newest first)
-        query = query.order_by(
-            Notification.priority.desc(),
-            Notification.created_at.desc(),
-        )
+        # Order by creation date (newest first)
+        query = query.order_by(Notification.created_at.desc())
         
         return query.offset(offset).limit(limit).all()
     
@@ -112,10 +110,8 @@ class NotificationService:
     
     def get_unread_count_by_type(self, user_id: UUID) -> Dict[str, int]:
         """Get count of unread notifications grouped by type."""
-        from sqlalchemy import func
-        
         results = self.db.query(
-            Notification.notification_type,
+            Notification.type,
             func.count(Notification.id),
         ).filter(
             and_(
@@ -123,10 +119,10 @@ class NotificationService:
                 Notification.is_read == False,
                 Notification.is_dismissed == False,
             )
-        ).group_by(Notification.notification_type).all()
+        ).group_by(Notification.type).all()
         
         return {
-            ntype.value if ntype else "unknown": count
+            ntype if ntype else "unknown": count
             for ntype, count in results
         }
     
@@ -137,52 +133,52 @@ class NotificationService:
     def create_notification(
         self,
         user_id: UUID,
-        notification_type: NotificationType,
+        notification_type: str,
         title: str,
         message: str,
-        priority: NotificationPriority = NotificationPriority.MEDIUM,
+        priority: str = "medium",
         action_url: Optional[str] = None,
-        action_text: Optional[str] = None,
+        action_label: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        related_video_id: Optional[UUID] = None,
-        related_post_id: Optional[UUID] = None,
     ) -> Notification:
         """
         Create a new notification.
         
         Args:
             user_id: User UUID
-            notification_type: Type of notification
+            notification_type: Type of notification (string)
             title: Notification title
             message: Notification message
-            priority: Notification priority
+            priority: Notification priority (string)
             action_url: Optional URL for action button
-            action_text: Optional text for action button
+            action_label: Optional label for action button
             metadata: Additional metadata
-            related_video_id: Related video if applicable
-            related_post_id: Related post if applicable
             
         Returns:
             Created Notification instance
         """
+        # Handle enum input
+        if hasattr(notification_type, 'value'):
+            notification_type = notification_type.value
+        if hasattr(priority, 'value'):
+            priority = priority.value
+        
         notification = Notification(
             user_id=user_id,
-            notification_type=notification_type,
+            type=notification_type,
             title=title,
             message=message,
             priority=priority,
             action_url=action_url,
-            action_text=action_text,
+            action_label=action_label,
             metadata=metadata or {},
-            related_video_id=related_video_id,
-            related_post_id=related_post_id,
         )
         
         self.db.add(notification)
         self.db.commit()
         self.db.refresh(notification)
         
-        logger.info(f"Created {notification_type.value} notification for user {user_id}")
+        logger.info(f"Created {notification_type} notification for user {user_id}")
         return notification
     
     # =========================================================================
@@ -198,13 +194,13 @@ class NotificationService:
         """Notify user that video generation is complete."""
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.VIDEO_COMPLETE,
+            notification_type=NotificationType.VIDEO_GENERATION_COMPLETE.value,
             title="Video Ready! 🎬",
             message=f"Your video '{video_title}' has been generated and is ready to view.",
-            priority=NotificationPriority.HIGH,
+            priority=NotificationPriority.HIGH.value,
             action_url=f"/videos/{video_id}",
-            action_text="View Video",
-            related_video_id=video_id,
+            action_label="View Video",
+            metadata={"video_id": str(video_id)},
         )
     
     def notify_video_failed(
@@ -217,14 +213,13 @@ class NotificationService:
         """Notify user that video generation failed."""
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.VIDEO_FAILED,
+            notification_type=NotificationType.VIDEO_GENERATION_FAILED.value,
             title="Video Generation Failed ❌",
             message=f"We couldn't generate '{video_title}'. {error_message}",
-            priority=NotificationPriority.HIGH,
+            priority=NotificationPriority.HIGH.value,
             action_url=f"/videos/{video_id}",
-            action_text="View Details",
-            related_video_id=video_id,
-            metadata={"error": error_message},
+            action_label="View Details",
+            metadata={"video_id": str(video_id), "error": error_message},
         )
     
     def notify_post_published(
@@ -237,13 +232,13 @@ class NotificationService:
         platform_text = ", ".join(platforms)
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.POST_PUBLISHED,
+            notification_type=NotificationType.POST_PUBLISHED.value,
             title="Post Published! 📤",
             message=f"Your video has been posted to {platform_text}.",
-            priority=NotificationPriority.MEDIUM,
+            priority=NotificationPriority.MEDIUM.value,
             action_url=f"/posts/{post_id}",
-            action_text="View Post",
-            related_post_id=post_id,
+            action_label="View Post",
+            metadata={"post_id": str(post_id), "platforms": platforms},
         )
     
     def notify_post_failed(
@@ -256,14 +251,13 @@ class NotificationService:
         """Notify user that post failed."""
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.POST_FAILED,
+            notification_type=NotificationType.POST_FAILED.value,
             title=f"Post to {platform} Failed ❌",
             message=f"We couldn't post to {platform}. {error_message}",
-            priority=NotificationPriority.HIGH,
+            priority=NotificationPriority.HIGH.value,
             action_url=f"/posts/{post_id}",
-            action_text="View Details",
-            related_post_id=post_id,
-            metadata={"platform": platform, "error": error_message},
+            action_label="View Details",
+            metadata={"post_id": str(post_id), "platform": platform, "error": error_message},
         )
     
     def notify_scheduled_post_reminder(
@@ -276,13 +270,13 @@ class NotificationService:
         time_str = scheduled_time.strftime("%I:%M %p on %b %d")
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.SCHEDULED_POST,
+            notification_type=NotificationType.SCHEDULED_POST.value,
             title="Scheduled Post Reminder ⏰",
             message=f"Your post is scheduled for {time_str}.",
-            priority=NotificationPriority.LOW,
+            priority=NotificationPriority.LOW.value,
             action_url=f"/posts/{post_id}",
-            action_text="View Post",
-            related_post_id=post_id,
+            action_label="View Post",
+            metadata={"post_id": str(post_id)},
         )
     
     def notify_payment_success(
@@ -294,12 +288,12 @@ class NotificationService:
         """Notify user of successful payment."""
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.PAYMENT_SUCCESS,
+            notification_type=NotificationType.PAYMENT_SUCCESS.value,
             title="Payment Successful ✅",
             message=f"Your payment of ${amount:.2f} {currency} was successful. Thank you!",
-            priority=NotificationPriority.MEDIUM,
+            priority=NotificationPriority.MEDIUM.value,
             action_url="/settings/subscription",
-            action_text="View Subscription",
+            action_label="View Subscription",
         )
     
     def notify_payment_failed(
@@ -310,12 +304,12 @@ class NotificationService:
         """Notify user of failed payment."""
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.PAYMENT_FAILED,
+            notification_type=NotificationType.SUBSCRIPTION_PAYMENT_FAILED.value,
             title="Payment Failed ⚠️",
             message=f"Your payment couldn't be processed. {error_message}",
-            priority=NotificationPriority.HIGH,
+            priority=NotificationPriority.HIGH.value,
             action_url="/settings/subscription",
-            action_text="Update Payment",
+            action_label="Update Payment",
         )
     
     def notify_subscription_expiring(
@@ -326,12 +320,12 @@ class NotificationService:
         """Notify user that subscription is expiring soon."""
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.SUBSCRIPTION_EXPIRING,
+            notification_type=NotificationType.SUBSCRIPTION_EXPIRING.value,
             title="Subscription Expiring Soon ⏳",
             message=f"Your premium subscription expires in {days_remaining} days. Renew to keep your benefits.",
-            priority=NotificationPriority.MEDIUM,
+            priority=NotificationPriority.MEDIUM.value,
             action_url="/settings/subscription",
-            action_text="Renew Now",
+            action_label="Renew Now",
         )
     
     def notify_subscription_cancelled(
@@ -343,12 +337,12 @@ class NotificationService:
         date_str = end_date.strftime("%B %d, %Y")
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.SUBSCRIPTION_CANCELLED,
+            notification_type=NotificationType.SUBSCRIPTION_CANCELLED.value,
             title="Subscription Cancelled",
             message=f"Your premium subscription has been cancelled. You'll have access until {date_str}.",
-            priority=NotificationPriority.MEDIUM,
+            priority=NotificationPriority.MEDIUM.value,
             action_url="/settings/subscription",
-            action_text="Reactivate",
+            action_label="Reactivate",
         )
     
     def notify_integration_error(
@@ -360,12 +354,12 @@ class NotificationService:
         """Notify user of integration error."""
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.INTEGRATION_ERROR,
+            notification_type=NotificationType.INTEGRATION_ERROR.value,
             title=f"{integration_name} Connection Issue ⚠️",
             message=f"There's an issue with your {integration_name} integration. {error_message}",
-            priority=NotificationPriority.HIGH,
+            priority=NotificationPriority.HIGH.value,
             action_url="/settings/integrations",
-            action_text="Fix Integration",
+            action_label="Fix Integration",
             metadata={"integration": integration_name, "error": error_message},
         )
     
@@ -377,12 +371,12 @@ class NotificationService:
         """Notify user that social account was disconnected."""
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.SOCIAL_DISCONNECT,
+            notification_type=NotificationType.SOCIAL_DISCONNECT.value,
             title=f"{platform} Account Disconnected",
             message=f"Your {platform} account has been disconnected. Reconnect to continue posting.",
-            priority=NotificationPriority.HIGH,
+            priority=NotificationPriority.HIGH.value,
             action_url="/settings/social-accounts",
-            action_text="Reconnect",
+            action_label="Reconnect",
             metadata={"platform": platform},
         )
     
@@ -390,12 +384,12 @@ class NotificationService:
         """Send welcome notification to new user."""
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.SYSTEM,
+            notification_type=NotificationType.SYSTEM.value,
             title=f"Welcome to Synthora, {user_name}! 🎉",
             message="Get started by connecting your integrations and creating your first video.",
-            priority=NotificationPriority.MEDIUM,
+            priority=NotificationPriority.MEDIUM.value,
             action_url="/onboarding",
-            action_text="Get Started",
+            action_label="Get Started",
         )
     
     def notify_system_announcement(
@@ -408,12 +402,12 @@ class NotificationService:
         """Send system announcement to user."""
         return self.create_notification(
             user_id=user_id,
-            notification_type=NotificationType.SYSTEM,
+            notification_type=NotificationType.SYSTEM.value,
             title=title,
             message=message,
-            priority=NotificationPriority.LOW,
+            priority=NotificationPriority.LOW.value,
             action_url=action_url,
-            action_text="Learn More" if action_url else None,
+            action_label="Learn More" if action_url else None,
         )
     
     # =========================================================================
@@ -425,7 +419,6 @@ class NotificationService:
         notification = self.get_notification_by_id(notification_id, user_id)
         if notification:
             notification.is_read = True
-            notification.read_at = datetime.utcnow()
             self.db.commit()
             self.db.refresh(notification)
         return notification
@@ -437,10 +430,7 @@ class NotificationService:
                 Notification.user_id == user_id,
                 Notification.is_read == False,
             )
-        ).update({
-            "is_read": True,
-            "read_at": datetime.utcnow(),
-        })
+        ).update({"is_read": True})
         self.db.commit()
         return count
     
@@ -449,7 +439,6 @@ class NotificationService:
         notification = self.get_notification_by_id(notification_id, user_id)
         if notification:
             notification.is_dismissed = True
-            notification.dismissed_at = datetime.utcnow()
             self.db.commit()
             self.db.refresh(notification)
         return notification
@@ -461,10 +450,7 @@ class NotificationService:
                 Notification.user_id == user_id,
                 Notification.is_dismissed == False,
             )
-        ).update({
-            "is_dismissed": True,
-            "dismissed_at": datetime.utcnow(),
-        })
+        ).update({"is_dismissed": True})
         self.db.commit()
         return count
     
@@ -538,4 +524,3 @@ class NotificationService:
 def get_notification_service(db: Session) -> NotificationService:
     """Factory function to create a NotificationService instance."""
     return NotificationService(db)
-

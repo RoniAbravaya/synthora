@@ -5,7 +5,7 @@ Business logic for managing video records and generation jobs.
 """
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -50,7 +50,7 @@ class VideoService:
     def get_user_videos(
         self,
         user_id: UUID,
-        status: Optional[VideoStatus] = None,
+        status: Optional[Union[VideoStatus, str]] = None,
         skip: int = 0,
         limit: int = 20,
     ) -> tuple[List[Video], int]:
@@ -59,7 +59,7 @@ class VideoService:
         
         Args:
             user_id: User's UUID
-            status: Filter by status
+            status: Filter by status (enum or string)
             skip: Pagination offset
             limit: Pagination limit
             
@@ -69,7 +69,9 @@ class VideoService:
         query = self.db.query(Video).filter(Video.user_id == user_id)
         
         if status:
-            query = query.filter(Video.status == status)
+            # Handle both enum and string input
+            status_value = status.value if hasattr(status, 'value') else status
+            query = query.filter(Video.status == status_value)
         
         # Exclude expired videos
         query = query.filter(
@@ -100,7 +102,7 @@ class VideoService:
         return self.db.query(Video).filter(
             and_(
                 Video.user_id == user_id,
-                Video.status.in_([VideoStatus.PENDING, VideoStatus.PROCESSING]),
+                Video.status.in_(["pending", "processing"]),
             )
         ).first()
     
@@ -155,7 +157,7 @@ class VideoService:
             template_id=template_id,
             title=title,
             prompt=prompt,
-            status=VideoStatus.PENDING,
+            status="pending",  # Use string value
             progress=0,
             expires_at=expires_at,
         )
@@ -199,8 +201,8 @@ class VideoService:
     def update_status(
         self,
         video: Video,
-        status: VideoStatus,
-        current_step: Optional[GenerationStep] = None,
+        status: Union[VideoStatus, str],
+        current_step: Optional[Union[GenerationStep, str]] = None,
         progress: Optional[int] = None,
     ) -> Video:
         """
@@ -208,17 +210,20 @@ class VideoService:
         
         Args:
             video: Video to update
-            status: New status
-            current_step: Current generation step
+            status: New status (enum or string)
+            current_step: Current generation step (enum or string)
             progress: Overall progress percentage
             
         Returns:
             Updated Video instance
         """
-        video.status = status
+        # Convert enum to string value
+        status_value = status.value if hasattr(status, 'value') else status
+        video.status = status_value
         
         if current_step is not None:
-            video.current_step = current_step
+            step_value = current_step.value if hasattr(current_step, 'value') else current_step
+            video.current_step = step_value
         
         if progress is not None:
             video.progress = progress
@@ -226,13 +231,13 @@ class VideoService:
         self.db.commit()
         self.db.refresh(video)
         
-        logger.info(f"Video {video.id} status updated to {status.value}")
+        logger.info(f"Video {video.id} status updated to {status_value}")
         return video
     
     def update_step(
         self,
         video: Video,
-        step: GenerationStep,
+        step: Union[GenerationStep, str],
         step_status: str,
         progress: int = 0,
         result: Optional[Dict[str, Any]] = None,
@@ -243,7 +248,7 @@ class VideoService:
         
         Args:
             video: Video to update
-            step: Generation step to update
+            step: Generation step to update (enum or string)
             step_status: Status of the step (pending, processing, completed, failed)
             progress: Step progress percentage
             result: Step result data
@@ -252,6 +257,9 @@ class VideoService:
         Returns:
             Updated Video instance
         """
+        # Convert enum to GenerationStep if string
+        if isinstance(step, str):
+            step = GenerationStep(step)
         video.update_step(step, step_status, progress, result, error)
         
         self.db.commit()
@@ -286,7 +294,7 @@ class VideoService:
         Returns:
             Updated Video instance
         """
-        video.status = VideoStatus.COMPLETED
+        video.status = "completed"  # Use string value
         video.progress = 100
         video.video_url = video_url
         video.thumbnail_url = thumbnail_url
@@ -455,7 +463,7 @@ class VideoService:
         by_status = {}
         for status in VideoStatus:
             count = self.db.query(Video).filter(
-                and_(Video.user_id == user_id, Video.status == status)
+                and_(Video.user_id == user_id, Video.status == status.value)
             ).count()
             by_status[status.value] = count
         
@@ -478,7 +486,7 @@ class VideoService:
         
         by_status = {}
         for status in VideoStatus:
-            count = self.db.query(Video).filter(Video.status == status).count()
+            count = self.db.query(Video).filter(Video.status == status.value).count()
             by_status[status.value] = count
         
         # Videos this month
@@ -497,4 +505,3 @@ class VideoService:
 def get_video_service(db: Session) -> VideoService:
     """Factory function to create a VideoService instance."""
     return VideoService(db)
-

@@ -11,7 +11,6 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.common import BaseSchema, IDSchema, TimestampSchema
-from app.models.video import VideoStatus, GenerationStep
 
 
 # =============================================================================
@@ -60,7 +59,7 @@ class VideoRetryRequest(BaseSchema):
 class SwapIntegrationRequest(BaseSchema):
     """Request to swap integration and retry."""
     
-    step: GenerationStep = Field(description="Step to swap integration for")
+    step: str = Field(description="Step to swap integration for")
     new_provider: str = Field(description="New provider to use")
 
 
@@ -81,9 +80,9 @@ class VideoStatusResponse(BaseSchema):
     """Real-time video generation status."""
     
     id: UUID
-    status: VideoStatus
+    status: str  # String, not enum
     progress: int = Field(ge=0, le=100, description="Overall progress percentage")
-    current_step: Optional[GenerationStep] = None
+    current_step: Optional[str] = None  # String, not enum
     generation_state: Optional[Dict[str, Any]] = Field(default=None, description="Status of each step")
     error_message: Optional[str] = Field(default=None, description="Error message if failed")
     error_details: Optional[Dict[str, Any]] = Field(default=None, description="Full error details")
@@ -97,9 +96,9 @@ class VideoResponse(IDSchema, TimestampSchema):
     title: Optional[str] = None
     prompt: str
     
-    status: VideoStatus
+    status: str  # String, not enum
     progress: int = 0
-    current_step: Optional[GenerationStep] = None
+    current_step: Optional[str] = None  # String, not enum
     
     video_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
@@ -119,7 +118,7 @@ class VideoListItem(IDSchema):
     
     title: Optional[str] = None
     prompt: str
-    status: VideoStatus
+    status: str  # String, not enum
     progress: int
     thumbnail_url: Optional[str] = None
     duration: Optional[float] = None
@@ -141,7 +140,6 @@ class VideoGenerationResponse(BaseSchema):
     
     video_id: UUID
     job_id: UUID
-    status: VideoStatus
+    status: str  # String, not enum
     message: str
     estimated_time: str = Field(description="Estimated generation time")
-

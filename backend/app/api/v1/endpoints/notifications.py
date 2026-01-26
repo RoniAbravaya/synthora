@@ -55,20 +55,10 @@ async def get_notifications(
     """
     service = NotificationService(db)
     
-    # Parse notification type
-    type_filter = None
-    if notification_type:
-        try:
-            type_filter = NotificationType(notification_type)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid notification type: {notification_type}",
-            )
-    
+    # Pass type filter directly as string
     notifications = service.get_user_notifications(
         current_user.id,
-        notification_type=type_filter,
+        notification_type=notification_type,
         include_read=include_read,
         include_dismissed=include_dismissed,
         limit=limit + 1,  # Get one extra to check if there's more
@@ -86,13 +76,13 @@ async def get_notifications(
         notifications=[
             NotificationListItem(
                 id=n.id,
-                notification_type=n.notification_type.value,
+                notification_type=n.type,
                 title=n.title,
-                message=n.message,
-                priority=n.priority.value,
+                message=n.message or "",
+                priority=n.priority,
                 is_read=n.is_read,
                 action_url=n.action_url,
-                action_text=n.action_text,
+                action_text=n.action_label,
                 created_at=n.created_at,
             )
             for n in notifications
@@ -141,19 +131,15 @@ async def get_notification(
     
     return NotificationResponse(
         id=notification.id,
-        notification_type=notification.notification_type.value,
+        notification_type=notification.type,
         title=notification.title,
-        message=notification.message,
-        priority=notification.priority.value,
+        message=notification.message or "",
+        priority=notification.priority,
         is_read=notification.is_read,
         is_dismissed=notification.is_dismissed,
-        read_at=notification.read_at,
-        dismissed_at=notification.dismissed_at,
         action_url=notification.action_url,
-        action_text=notification.action_text,
+        action_text=notification.action_label,
         metadata=notification.metadata or {},
-        related_video_id=notification.related_video_id,
-        related_post_id=notification.related_post_id,
         created_at=notification.created_at,
         updated_at=notification.updated_at,
     )
@@ -183,19 +169,15 @@ async def mark_notification_read(
     
     return NotificationResponse(
         id=notification.id,
-        notification_type=notification.notification_type.value,
+        notification_type=notification.type,
         title=notification.title,
-        message=notification.message,
-        priority=notification.priority.value,
+        message=notification.message or "",
+        priority=notification.priority,
         is_read=notification.is_read,
         is_dismissed=notification.is_dismissed,
-        read_at=notification.read_at,
-        dismissed_at=notification.dismissed_at,
         action_url=notification.action_url,
-        action_text=notification.action_text,
+        action_text=notification.action_label,
         metadata=notification.metadata or {},
-        related_video_id=notification.related_video_id,
-        related_post_id=notification.related_post_id,
         created_at=notification.created_at,
         updated_at=notification.updated_at,
     )
@@ -244,19 +226,15 @@ async def dismiss_notification(
     
     return NotificationResponse(
         id=notification.id,
-        notification_type=notification.notification_type.value,
+        notification_type=notification.type,
         title=notification.title,
-        message=notification.message,
-        priority=notification.priority.value,
+        message=notification.message or "",
+        priority=notification.priority,
         is_read=notification.is_read,
         is_dismissed=notification.is_dismissed,
-        read_at=notification.read_at,
-        dismissed_at=notification.dismissed_at,
         action_url=notification.action_url,
-        action_text=notification.action_text,
+        action_text=notification.action_label,
         metadata=notification.metadata or {},
-        related_video_id=notification.related_video_id,
-        related_post_id=notification.related_post_id,
         created_at=notification.created_at,
         updated_at=notification.updated_at,
     )

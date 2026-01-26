@@ -53,10 +53,10 @@ def publish_scheduled_post(post_id: str) -> Dict[str, Any]:
             logger.error(f"Post not found: {post_id}")
             return {"success": False, "error": "Post not found"}
         
-        # Check if post is still scheduled
-        if post.status != PostStatus.SCHEDULED:
-            logger.warning(f"Post {post_id} is not scheduled (status: {post.status.value})")
-            return {"success": False, "error": f"Post status is {post.status.value}"}
+        # Check if post is still scheduled (use string comparison)
+        if post.status != "scheduled":
+            logger.warning(f"Post {post_id} is not scheduled (status: {post.status})")
+            return {"success": False, "error": f"Post status is {post.status}"}
         
         # Run the async publish
         result = asyncio.run(_publish_post(db, post))
@@ -91,8 +91,9 @@ def publish_post_now(post_id: str) -> Dict[str, Any]:
         if not post:
             return {"success": False, "error": "Post not found"}
         
-        if post.status not in [PostStatus.DRAFT, PostStatus.SCHEDULED]:
-            return {"success": False, "error": f"Cannot publish post in status: {post.status.value}"}
+        # Use string comparisons
+        if post.status not in ["draft", "scheduled"]:
+            return {"success": False, "error": f"Cannot publish post in status: {post.status}"}
         
         result = asyncio.run(_publish_post(db, post))
         
@@ -127,7 +128,7 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
     if not video:
         post_service.update_platform_status(
             post, 
-            SocialPlatform(post.platforms[0]) if post.platforms else SocialPlatform.YOUTUBE,
+            post.platforms[0] if post.platforms else "youtube",
             "failed",
             error="Video not found"
         )
@@ -137,22 +138,20 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
     
     # Publish to each platform
     for platform_str in post.platforms:
-        platform = SocialPlatform(platform_str)
-        
         # Update platform status to publishing
-        post_service.update_platform_status(post, platform, "publishing")
+        post_service.update_platform_status(post, platform_str, "publishing")
         
-        # Get social account for this platform
-        accounts = oauth_service.get_user_accounts(post.user_id, platform)
+        # Get social account for this platform (platform is stored as string in DB)
+        accounts = oauth_service.get_user_accounts(post.user_id, platform_str)
         
         if not accounts:
             post_service.update_platform_status(
-                post, platform, "failed",
-                error=f"No {platform.value} account connected"
+                post, platform_str, "failed",
+                error=f"No {platform_str} account connected"
             )
             results[platform_str] = {
                 "success": False,
-                "error": f"No {platform.value} account connected"
+                "error": f"No {platform_str} account connected"
             }
             continue
         
@@ -163,7 +162,7 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
         
         if not access_token:
             post_service.update_platform_status(
-                post, platform, "failed",
+                post, platform_str, "failed",
                 error="Failed to get access token"
             )
             results[platform_str] = {
@@ -186,20 +185,21 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
             platform_overrides=platform_overrides,
         )
         
-        # Get publisher and publish
+        # Get publisher and publish (convert string to enum for publisher)
         try:
-            publisher = get_publisher(platform)
+            platform_enum = SocialPlatform(platform_str)
+            publisher = get_publisher(platform_enum)
             result = await publisher.publish(request)
             
             if result.success:
                 post_service.update_platform_status(
-                    post, platform, "published",
+                    post, platform_str, "published",
                     post_id=result.post_id,
                     post_url=result.post_url,
                 )
             else:
                 post_service.update_platform_status(
-                    post, platform, "failed",
+                    post, platform_str, "failed",
                     error=result.error,
                 )
             
@@ -208,7 +208,7 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
         except Exception as e:
             logger.exception(f"Error publishing to {platform_str}")
             post_service.update_platform_status(
-                post, platform, "failed",
+                post, platform_str, "failed",
                 error=str(e),
             )
             results[platform_str] = {
@@ -266,4 +266,3 @@ def process_scheduled_posts() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
     finally:
         db.close()
-

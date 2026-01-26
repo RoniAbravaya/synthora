@@ -174,14 +174,15 @@ def retry_video_generation(
                 "error": "Video not found",
             }
         
-        if video.status not in [VideoStatus.FAILED, VideoStatus.PROCESSING]:
+        # Use string comparisons
+        if video.status not in ["failed", "processing"]:
             return {
                 "success": False,
-                "error": f"Cannot retry video in status: {video.status.value}",
+                "error": f"Cannot retry video in status: {video.status}",
             }
         
-        # Reset video status to pending
-        video_service.update_status(video, VideoStatus.PENDING, progress=0)
+        # Reset video status to pending (use string)
+        video_service.update_status(video, "pending", progress=0)
         
         # Get the original prompt and template
         prompt = video.prompt
@@ -235,4 +236,3 @@ def update_job_progress(job_id: str, progress: int, message: str) -> None:
         logger.error(f"Failed to update job progress: {e}")
     finally:
         db.close()
-

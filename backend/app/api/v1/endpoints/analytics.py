@@ -396,7 +396,7 @@ async def sync_post_analytics(
             detail="Post not found",
         )
     
-    if post.status != PostStatus.PUBLISHED:
+    if post.status != "published":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Can only sync analytics for published posts",

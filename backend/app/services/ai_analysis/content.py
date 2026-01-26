@@ -63,7 +63,7 @@ class ContentAnalyzer:
         posts = self.db.query(Post).filter(
             and_(
                 Post.user_id == user_id,
-                Post.status == PostStatus.PUBLISHED,
+                Post.status == "published",
             )
         ).all()
         

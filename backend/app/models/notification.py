@@ -8,7 +8,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional, Dict, Any
 
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text, Enum
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
@@ -43,6 +43,15 @@ class NotificationType(str, enum.Enum):
     SUBSCRIPTION_PAYMENT_FAILED = "subscription_payment_failed"
     SUBSCRIPTION_CANCELLED = "subscription_cancelled"
     SYSTEM = "system"
+    # Additional types used by notification service
+    VIDEO_COMPLETE = "video_complete"
+    VIDEO_FAILED = "video_failed"
+    SCHEDULED_POST = "scheduled_post"
+    PAYMENT_SUCCESS = "payment_success"
+    PAYMENT_FAILED = "payment_failed"
+    SUBSCRIPTION_EXPIRING = "subscription_expiring"
+    INTEGRATION_ERROR = "integration_error"
+    SOCIAL_DISCONNECT = "social_disconnect"
 
 
 class NotificationPriority(str, enum.Enum):
@@ -58,14 +67,20 @@ class Notification(Base, UUIDMixin, TimestampMixin):
     """
     Notification model for in-app notifications.
     
+    This model matches the database schema from migration 001_initial_schema.
+    
     Attributes:
         id: Unique identifier (UUID)
         user_id: Foreign key to user
-        type: Notification type
+        type: Notification type (stored as string in DB)
         title: Short notification title
         message: Notification message
-        data: Additional data (JSON) - links, IDs, etc.
+        priority: Notification priority (stored as string in DB)
         is_read: Whether notification has been read
+        is_dismissed: Whether notification has been dismissed
+        action_url: URL for action button
+        action_label: Label for action button
+        metadata: Additional data (JSON)
         
     Relationships:
         user: The user this notification is for
@@ -82,9 +97,9 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         doc="Foreign key to user"
     )
     
-    # Notification Info
+    # Notification Info - stored as strings in DB (not PostgreSQL ENUM)
     type = Column(
-        Enum(NotificationType),
+        String(30),
         nullable=False,
         index=True,
         doc="Notification type"
@@ -96,14 +111,14 @@ class Notification(Base, UUIDMixin, TimestampMixin):
     )
     message = Column(
         Text,
-        nullable=False,
+        nullable=True,
         doc="Notification message"
     )
-    data = Column(
-        JSONB,
-        default=dict,
+    priority = Column(
+        String(10),
+        default="medium",
         nullable=False,
-        doc="Additional data (links, IDs, etc.)"
+        doc="Notification priority"
     )
     
     # Status
@@ -114,6 +129,31 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         index=True,
         doc="Whether notification has been read"
     )
+    is_dismissed = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+        doc="Whether notification has been dismissed"
+    )
+    
+    # Action
+    action_url = Column(
+        String(500),
+        nullable=True,
+        doc="URL for action button"
+    )
+    action_label = Column(
+        String(50),
+        nullable=True,
+        doc="Label for action button"
+    )
+    
+    # Additional data - column name is 'metadata' in DB
+    metadata = Column(
+        JSONB,
+        nullable=True,
+        doc="Additional data (links, IDs, etc.)"
+    )
     
     # Relationship
     user = relationship("User", back_populates="notifications")
@@ -121,19 +161,40 @@ class Notification(Base, UUIDMixin, TimestampMixin):
     def __repr__(self) -> str:
         return f"<Notification(id={self.id}, type={self.type}, title={self.title})>"
     
+    # Aliases for backwards compatibility with code using enum-style access
+    @property
+    def notification_type(self) -> str:
+        """Alias for type field."""
+        return self.type
+    
+    @property
+    def action_text(self) -> Optional[str]:
+        """Alias for action_label."""
+        return self.action_label
+    
+    @property
+    def data(self) -> Optional[dict]:
+        """Alias for metadata."""
+        return self.metadata
+    
     def mark_read(self) -> None:
         """Mark notification as read."""
         self.is_read = True
+    
+    def dismiss(self) -> None:
+        """Dismiss notification."""
+        self.is_dismissed = True
     
     @staticmethod
     def create_video_complete(user_id: str, video_id: str, video_title: str) -> "Notification":
         """Create a video generation complete notification."""
         return Notification(
             user_id=user_id,
-            type=NotificationType.VIDEO_GENERATION_COMPLETE,
+            type=NotificationType.VIDEO_GENERATION_COMPLETE.value,
             title="Video Ready!",
             message=f"Your video '{video_title}' has been generated successfully.",
-            data={"video_id": str(video_id), "action": "view_video"}
+            priority=NotificationPriority.MEDIUM.value,
+            metadata={"video_id": str(video_id), "action": "view_video"}
         )
     
     @staticmethod
@@ -141,10 +202,11 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a video generation failed notification."""
         return Notification(
             user_id=user_id,
-            type=NotificationType.VIDEO_GENERATION_FAILED,
+            type=NotificationType.VIDEO_GENERATION_FAILED.value,
             title="Video Generation Failed",
             message=f"Your video could not be generated: {error_message}",
-            data={"video_id": str(video_id), "action": "retry_video"}
+            priority=NotificationPriority.HIGH.value,
+            metadata={"video_id": str(video_id), "action": "retry_video"}
         )
     
     @staticmethod
@@ -157,10 +219,13 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a post published notification."""
         return Notification(
             user_id=user_id,
-            type=NotificationType.POST_PUBLISHED,
+            type=NotificationType.POST_PUBLISHED.value,
             title=f"Posted to {platform.title()}!",
             message=f"Your video has been posted to {platform.title()} successfully.",
-            data={
+            priority=NotificationPriority.MEDIUM.value,
+            action_url=post_url,
+            action_label="View Post",
+            metadata={
                 "post_id": str(post_id),
                 "platform": platform,
                 "post_url": post_url,
@@ -178,10 +243,11 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a post failed notification."""
         return Notification(
             user_id=user_id,
-            type=NotificationType.POST_FAILED,
+            type=NotificationType.POST_FAILED.value,
             title=f"Failed to Post to {platform.title()}",
             message=f"Could not post to {platform.title()}: {error_message}",
-            data={
+            priority=NotificationPriority.HIGH.value,
+            metadata={
                 "post_id": str(post_id),
                 "platform": platform,
                 "action": "retry_post"
@@ -198,10 +264,12 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a video expiring soon notification."""
         return Notification(
             user_id=user_id,
-            type=NotificationType.VIDEO_EXPIRING_SOON,
+            type=NotificationType.VIDEO_EXPIRING_SOON.value,
             title="Video Expiring Soon",
             message=f"Your video '{video_title}' will expire in {days_remaining} days. Upgrade to Premium for unlimited retention.",
-            data={
+            priority=NotificationPriority.MEDIUM.value,
+            action_label="Upgrade",
+            metadata={
                 "video_id": str(video_id),
                 "days_remaining": days_remaining,
                 "action": "upgrade"
@@ -213,10 +281,11 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a subscription renewed notification."""
         return Notification(
             user_id=user_id,
-            type=NotificationType.SUBSCRIPTION_RENEWED,
+            type=NotificationType.SUBSCRIPTION_RENEWED.value,
             title="Subscription Renewed",
             message=f"Your {plan} subscription has been renewed. Next billing: {next_billing}",
-            data={"plan": plan, "next_billing": next_billing}
+            priority=NotificationPriority.MEDIUM.value,
+            metadata={"plan": plan, "next_billing": next_billing}
         )
     
     @staticmethod
@@ -224,10 +293,11 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a payment failed notification."""
         return Notification(
             user_id=user_id,
-            type=NotificationType.SUBSCRIPTION_PAYMENT_FAILED,
+            type=NotificationType.SUBSCRIPTION_PAYMENT_FAILED.value,
             title="Payment Failed",
             message="We couldn't process your subscription payment. Please update your payment method.",
-            data={"action": "update_payment"}
+            priority=NotificationPriority.HIGH.value,
+            metadata={"action": "update_payment"}
         )
     
     @staticmethod
@@ -235,9 +305,20 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         """Create a subscription cancelled notification."""
         return Notification(
             user_id=user_id,
-            type=NotificationType.SUBSCRIPTION_CANCELLED,
+            type=NotificationType.SUBSCRIPTION_CANCELLED.value,
             title="Subscription Cancelled",
             message=f"Your subscription has been cancelled. You'll have access until {end_date}.",
-            data={"end_date": end_date, "action": "resubscribe"}
+            priority=NotificationPriority.MEDIUM.value,
+            metadata={"end_date": end_date, "action": "resubscribe"}
         )
-
+    
+    @staticmethod
+    def create_system(user_id: str, title: str, message: str) -> "Notification":
+        """Create a system notification."""
+        return Notification(
+            user_id=user_id,
+            type=NotificationType.SYSTEM.value,
+            title=title,
+            message=message,
+            priority=NotificationPriority.LOW.value,
+        )

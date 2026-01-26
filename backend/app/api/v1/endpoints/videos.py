@@ -41,7 +41,7 @@ router = APIRouter(prefix="/videos", tags=["Videos"])
 
 @router.get("", response_model=VideoListResponse)
 async def list_videos(
-    status_filter: Optional[VideoStatus] = Query(default=None, alias="status"),
+    status_filter: Optional[str] = Query(default=None, alias="status"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     user: User = Depends(get_current_active_user),
@@ -147,9 +147,9 @@ async def get_video_status(
         status=video.status,
         progress=video.progress,
         current_step=video.current_step,
-        generation_state=video.generation_state,
+        generation_state=video.generation_config,
         error_message=video.error_message,
-        error_details=video.error_details,
+        error_details=None,  # Not stored as separate field
     )
 
 
@@ -291,10 +291,10 @@ async def retry_video(
             detail="Not authorized to retry this video",
         )
     
-    if video.status not in [VideoStatus.FAILED]:
+    if video.status != "failed":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot retry video in status: {video.status.value}",
+            detail=f"Cannot retry video in status: {video.status}",
         )
     
     # Check concurrent limit
@@ -314,7 +314,7 @@ async def retry_video(
     )
     
     # Update status
-    video_service.update_status(video, VideoStatus.PENDING, progress=0)
+    video_service.update_status(video, "pending", progress=0)
     
     return _video_to_response(video)
 
@@ -353,7 +353,7 @@ async def delete_video(
         )
     
     # Cannot delete while generating
-    if video.status in [VideoStatus.PENDING, VideoStatus.PROCESSING]:
+    if video.status in ["pending", "processing"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete a video that is currently generating",
@@ -362,6 +362,29 @@ async def delete_video(
     video_service.delete_video(video)
     
     return MessageResponse(message="Video deleted")
+
+
+# =============================================================================
+# Daily Limit
+# =============================================================================
+
+@router.get("/daily-limit", response_model=dict)
+async def get_daily_limit(
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the daily video generation limit for the current user.
+    
+    Returns:
+        - limit: Maximum videos allowed per day (null for unlimited)
+        - used: Videos created today
+        - remaining: Videos remaining today (null for unlimited)
+    
+    **Requires:** Authentication
+    """
+    limits_service = LimitsService(db)
+    return limits_service.get_video_limit_info(user.id)
 
 
 # =============================================================================
