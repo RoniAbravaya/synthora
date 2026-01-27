@@ -5,8 +5,9 @@
  */
 
 import { useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import {
+  Video,
   Sparkles,
   Lock,
   Clock,
@@ -437,6 +438,7 @@ function PostingTimesTab() {
 
 function ContentIdeasTab() {
   const { data, isLoading, refetch } = useContentIdeas(5)
+  const navigate = useNavigate()
   
   if (isLoading) {
     return (
@@ -447,6 +449,14 @@ function ContentIdeasTab() {
   }
   
   const ideas = data?.ideas || []
+
+  // Generate a video using the idea's topic and hook as the prompt
+  const handleGenerateVideo = (idea: { topic: string; hook: string; description: string; suggested_hashtags: string[] }) => {
+    // Build a prompt from the idea
+    const prompt = `${idea.topic}: ${idea.hook}`
+    // Navigate to create page with pre-filled prompt
+    navigate(`/create?prompt=${encodeURIComponent(prompt)}`)
+  }
 
   return (
     <div className="space-y-4">
@@ -516,6 +526,14 @@ function ContentIdeasTab() {
                     {idea.estimated_engagement}
                   </span>
                 </div>
+                {/* Generate Video Button */}
+                <Button 
+                  className="w-full mt-3 gap-2" 
+                  onClick={() => handleGenerateVideo(idea)}
+                >
+                  <Video className="h-4 w-4" />
+                  Generate Video
+                </Button>
               </CardContent>
             </Card>
           ))}

@@ -2,18 +2,57 @@
  * Dashboard Page
  * 
  * Main dashboard with overview stats and quick actions.
+ * Fetches real data from the API to display video counts, analytics, and scheduled posts.
  */
 
 import { Link } from "react-router-dom"
-import { Plus, Video, BarChart3, Calendar, ArrowRight, Sparkles } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { Plus, Video, BarChart3, Calendar, ArrowRight, Sparkles, Loader2 } from "lucide-react"
 import { useAuth, useIsPremium } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
+import { useVideos, useDailyLimit } from "@/hooks/useVideos"
+import { analyticsService } from "@/services/analytics"
+import { postsService } from "@/services/posts"
+import { formatCompactNumber } from "@/lib/utils"
 
 export default function DashboardPage() {
   const { user } = useAuth()
   const isPremium = useIsPremium()
+
+  // Fetch videos to get total count
+  const { data: videosData, isLoading: videosLoading } = useVideos({ limit: 1 })
+  
+  // Fetch daily limit for free users
+  const { data: dailyLimitData, isLoading: dailyLimitLoading } = useDailyLimit()
+  
+  // Fetch analytics overview
+  const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
+    queryKey: ["analytics", "overview", 30],
+    queryFn: () => analyticsService.getOverview(30),
+  })
+  
+  // Fetch upcoming posts for scheduled posts count
+  const { data: upcomingData, isLoading: upcomingLoading } = useQuery({
+    queryKey: ["posts", "upcoming"],
+    queryFn: () => postsService.getUpcoming(100),
+  })
+
+  // Calculate values with safe defaults
+  const totalVideos = videosData?.total ?? 0
+  const totalViews = analyticsData?.summary?.views ?? 0
+  const engagementRate = analyticsData?.summary?.engagement_rate ?? 0
+  const scheduledPostsCount = upcomingData?.posts?.filter(
+    (p) => p.status === "scheduled" && new Date(p.scheduled_at || "") > new Date()
+  ).length ?? 0
+  
+  // Daily limit values
+  const dailyLimitUsed = dailyLimitData?.used ?? 0
+  const dailyLimitMax = dailyLimitData?.limit ?? 1
+  const dailyLimitProgress = dailyLimitMax > 0 ? (dailyLimitUsed / dailyLimitMax) * 100 : 0
+  
+  const isLoading = videosLoading || analyticsLoading || upcomingLoading
 
   return (
     <div className="space-y-8">
@@ -42,8 +81,16 @@ export default function DashboardPage() {
             <div className="flex-1">
               <p className="text-sm font-medium">Daily Video Limit</p>
               <div className="mt-2 flex items-center gap-4">
-                <Progress value={0} className="flex-1" />
-                <span className="text-sm text-muted-foreground">0/1 used</span>
+                {dailyLimitLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                ) : (
+                  <>
+                    <Progress value={dailyLimitProgress} className="flex-1" />
+                    <span className="text-sm text-muted-foreground">
+                      {dailyLimitUsed}/{dailyLimitMax} used
+                    </span>
+                  </>
+                )}
               </div>
             </div>
             <Link to="/settings">
@@ -64,10 +111,19 @@ export default function DashboardPage() {
             <Video className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">
-              Start creating to see your videos here
-            </p>
+            {isLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{totalVideos}</div>
+                <p className="text-xs text-muted-foreground">
+                  {totalVideos === 0 
+                    ? "Start creating to see your videos here"
+                    : `${totalVideos} video${totalVideos !== 1 ? "s" : ""} generated`
+                  }
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -77,10 +133,19 @@ export default function DashboardPage() {
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">
-              Connect social accounts to track
-            </p>
+            {isLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{formatCompactNumber(totalViews)}</div>
+                <p className="text-xs text-muted-foreground">
+                  {totalViews === 0 
+                    ? "Connect social accounts to track"
+                    : "Across all platforms"
+                  }
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -90,10 +155,19 @@ export default function DashboardPage() {
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">
-              No upcoming posts
-            </p>
+            {isLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{scheduledPostsCount}</div>
+                <p className="text-xs text-muted-foreground">
+                  {scheduledPostsCount === 0 
+                    ? "No upcoming posts"
+                    : `${scheduledPostsCount} post${scheduledPostsCount !== 1 ? "s" : ""} scheduled`
+                  }
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -103,10 +177,21 @@ export default function DashboardPage() {
             <Sparkles className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">--%</div>
-            <p className="text-xs text-muted-foreground">
-              Publish content to see engagement
-            </p>
+            {isLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold">
+                  {engagementRate > 0 ? `${engagementRate.toFixed(1)}%` : "--%"}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {engagementRate === 0 
+                    ? "Publish content to see engagement"
+                    : "Average engagement rate"
+                  }
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

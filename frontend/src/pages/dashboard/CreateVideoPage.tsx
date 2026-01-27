@@ -4,8 +4,8 @@
  * Video generation wizard with template selection and topic input.
  */
 
-import { useState } from "react"
-import { useNavigate, Link } from "react-router-dom"
+import { useState, useEffect } from "react"
+import { useNavigate, Link, useSearchParams } from "react-router-dom"
 import {
   ArrowLeft,
   ArrowRight,
@@ -207,15 +207,33 @@ function TopicInputStep({
 
 export default function CreateVideoPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { user } = useAuth()
   const isPremium = useIsPremium()
 
+  // Get prompt from URL query parameter
+  const initialPrompt = searchParams.get("prompt") || ""
+
   const [step, setStep] = useState(1)
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
-  const [topic, setTopic] = useState("")
+  const [topic, setTopic] = useState(initialPrompt)
   const [customInstructions, setCustomInstructions] = useState("")
 
+  // If prompt is provided via URL, auto-advance to step 2 when template is selected
+  const hasPrefilledPrompt = initialPrompt.length > 0
+
   const { data: templatesData, isLoading: templatesLoading } = useTemplates()
+  
+  // Auto-select first template if prompt is provided
+  useEffect(() => {
+    if (hasPrefilledPrompt && templatesData?.templates?.length && !selectedTemplate) {
+      // Auto-select the first system template
+      const systemTemplate = templatesData.templates.find(t => t.is_system)
+      if (systemTemplate) {
+        setSelectedTemplate(systemTemplate)
+      }
+    }
+  }, [hasPrefilledPrompt, templatesData, selectedTemplate])
   const { data: readinessData } = useIntegrationReadiness()
   const { data: limitData } = useDailyLimit()
   const generateMutation = useGenerateVideo()
