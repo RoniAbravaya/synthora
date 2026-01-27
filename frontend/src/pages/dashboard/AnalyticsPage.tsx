@@ -387,13 +387,20 @@ export default function AnalyticsPage() {
   })
 
   // Sync mutation
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const syncMutation = useMutation({
     mutationFn: () => analyticsService.sync(),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      setSyncMessage("Analytics sync started! This may take 1-2 minutes. Data will refresh automatically.")
       // Invalidate all analytics queries after a delay
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["analytics"] })
-      }, 3000)
+        setSyncMessage(null)
+      }, 5000)
+    },
+    onError: (error: any) => {
+      setSyncMessage(`Sync failed: ${error.message || "Unknown error"}`)
+      setTimeout(() => setSyncMessage(null), 5000)
     },
   })
 
@@ -474,10 +481,22 @@ export default function AnalyticsPage() {
             ) : (
               <RefreshCw className="mr-2 h-4 w-4" />
             )}
-            Sync
+            Refresh Data
           </Button>
         </div>
       </div>
+
+      {/* Sync Status Message */}
+      {syncMessage && (
+        <Card className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+          <CardContent className="py-3">
+            <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              {syncMessage}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {!hasData ? (
         // Empty State

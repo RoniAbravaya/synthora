@@ -106,14 +106,14 @@ def sync_post_analytics_job(post_id: str) -> dict:
             finally:
                 loop.close()
             
-                if fetch_result.success:
-                    # Log information about the fetched data
-                    logger.info(f"=== ANALYTICS FETCH SUCCESSFUL for post {post_id} ===")
-                    logger.info(
-                        f"Analytics fetch successful for post {post_id}: "
-                        f"views={fetch_result.views}, likes={fetch_result.likes}, "
-                        f"comments={fetch_result.comments}, shares={fetch_result.shares}"
-                    )
+            if fetch_result.success:
+                # Log information about the fetched data
+                logger.info(f"=== ANALYTICS FETCH SUCCESSFUL for post {post_id} ===")
+                logger.info(
+                    f"Analytics fetch successful for post {post_id}: "
+                    f"views={fetch_result.views}, likes={fetch_result.likes}, "
+                    f"comments={fetch_result.comments}, shares={fetch_result.shares}"
+                )
                 
                 # Warn if all metrics are 0 (common for newly published posts)
                 if (fetch_result.views == 0 and fetch_result.likes == 0 and 
@@ -182,6 +182,8 @@ def sync_user_analytics_job(user_id: str) -> dict:
     Returns:
         Dictionary with sync results
     """
+    logger.info(f"=== USER ANALYTICS SYNC STARTED for user {user_id} ===")
+    
     db = SessionLocal()
     
     try:
@@ -192,6 +194,8 @@ def sync_user_analytics_job(user_id: str) -> dict:
             Post.user_id == user_uuid,
             Post.status == "published",
         ).all()
+        
+        logger.info(f"Found {len(posts)} published posts for user {user_id}")
         
         results = {
             "total_posts": len(posts),
@@ -458,8 +462,10 @@ def queue_user_analytics_sync(user_id: UUID, queue_name: str = "analytics") -> O
         queue_name: Name of the queue
         
     Returns:
-        Job ID if queued successfully
+        Job ID if queued successfully, or "sync" if run synchronously
     """
+    logger.info(f"=== QUEUEING USER ANALYTICS SYNC for user {user_id} ===")
+    
     try:
         from redis import Redis
         from rq import Queue
@@ -467,8 +473,17 @@ def queue_user_analytics_sync(user_id: UUID, queue_name: str = "analytics") -> O
         
         settings = get_settings()
         if not settings.REDIS_URL:
-            logger.warning("REDIS_URL not configured, skipping analytics queue")
-            return None
+            logger.warning("REDIS_URL not configured, running analytics sync synchronously")
+            # Run synchronously as fallback
+            import threading
+            thread = threading.Thread(
+                target=sync_user_analytics_job,
+                args=(str(user_id),),
+                daemon=True
+            )
+            thread.start()
+            return "sync-thread"
+            
         redis_conn = Redis.from_url(settings.REDIS_URL)
         queue = Queue(queue_name, connection=redis_conn)
         
@@ -478,8 +493,18 @@ def queue_user_analytics_sync(user_id: UUID, queue_name: str = "analytics") -> O
             job_timeout=1800,  # 30 minutes
         )
         
+        logger.info(f"Queued user analytics sync job {job.id} for user {user_id}")
         return job.id
         
     except Exception as e:
         logger.error(f"Failed to queue user analytics sync: {e}")
-        return None
+        # Fallback to synchronous execution in a thread
+        logger.info(f"Falling back to synchronous analytics sync for user {user_id}")
+        import threading
+        thread = threading.Thread(
+            target=sync_user_analytics_job,
+            args=(str(user_id),),
+            daemon=True
+        )
+        thread.start()
+        return "sync-fallback"
