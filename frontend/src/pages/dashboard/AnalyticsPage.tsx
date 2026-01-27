@@ -97,13 +97,15 @@ interface StatCardProps {
 }
 
 function StatCard({ title, value, change, icon, format = "compact" }: StatCardProps) {
-  const isPositive = change >= 0
+  const safeValue = value ?? 0
+  const safeChange = change ?? 0
+  const isPositive = safeChange >= 0
   const formattedValue =
     format === "percent"
-      ? `${value.toFixed(1)}%`
+      ? `${safeValue.toFixed(1)}%`
       : format === "compact"
-      ? formatCompactNumber(value)
-      : formatNumber(value)
+      ? formatCompactNumber(safeValue)
+      : formatNumber(safeValue)
 
   return (
     <Card>
@@ -126,7 +128,7 @@ function StatCard({ title, value, change, icon, format = "compact" }: StatCardPr
           ) : (
             <ArrowDownRight className="mr-1 h-3 w-3" />
           )}
-          {Math.abs(change).toFixed(1)}% from last period
+          {Math.abs(safeChange).toFixed(1)}% from last period
         </div>
       </CardContent>
     </Card>
@@ -142,6 +144,9 @@ interface PlatformCardProps {
 }
 
 function PlatformCard({ stats }: PlatformCardProps) {
+  const engagementRate = stats.engagement_rate ?? 0
+  const posts = stats.posts ?? 0
+  
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -156,7 +161,7 @@ function PlatformCard({ stats }: PlatformCardProps) {
           </div>
           <div>
             <CardTitle className="text-base capitalize">{stats.platform}</CardTitle>
-            <CardDescription>{stats.posts} posts</CardDescription>
+            <CardDescription>{posts} posts</CardDescription>
           </div>
         </div>
       </CardHeader>
@@ -183,9 +188,9 @@ function PlatformCard({ stats }: PlatformCardProps) {
         <div>
           <div className="mb-1 flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Engagement Rate</span>
-            <span className="font-medium">{stats.engagement_rate.toFixed(1)}%</span>
+            <span className="font-medium">{engagementRate.toFixed(1)}%</span>
           </div>
-          <Progress value={Math.min(stats.engagement_rate * 10, 100)} className="h-2" />
+          <Progress value={Math.min(engagementRate * 10, 100)} className="h-2" />
         </div>
       </CardContent>
     </Card>

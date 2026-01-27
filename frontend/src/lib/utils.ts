@@ -69,14 +69,16 @@ export function capitalize(str: string): string {
 /**
  * Formats a number with commas as thousands separators.
  */
-export function formatNumber(num: number): string {
+export function formatNumber(num: number | null | undefined): string {
+  if (num === null || num === undefined) return "0"
   return num.toLocaleString("en-US")
 }
 
 /**
  * Formats a number in a compact format (e.g., 1.2K, 3.4M).
  */
-export function formatCompactNumber(num: number): string {
+export function formatCompactNumber(num: number | null | undefined): string {
+  if (num === null || num === undefined) return "0"
   if (num >= 1000000) {
     return (num / 1000000).toFixed(1) + "M"
   } else if (num >= 1000) {
