@@ -55,7 +55,7 @@ class YouTubeClient(BaseSocialClient):
         self.default_config = OAuthConfig(
             client_id=settings.YOUTUBE_CLIENT_ID or "",
             client_secret=settings.YOUTUBE_CLIENT_SECRET or "",
-            redirect_uri=settings.YOUTUBE_REDIRECT_URI or "",
+            redirect_uri=settings.youtube_redirect_uri,
             scopes=self.DEFAULT_SCOPES,
         )
     

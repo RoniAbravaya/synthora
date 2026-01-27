@@ -56,7 +56,7 @@ class InstagramClient(BaseSocialClient):
         self.default_config = OAuthConfig(
             client_id=settings.META_APP_ID or "",
             client_secret=settings.META_APP_SECRET or "",
-            redirect_uri=settings.INSTAGRAM_REDIRECT_URI or "",
+            redirect_uri=settings.instagram_redirect_uri,
             scopes=self.DEFAULT_SCOPES,
         )
     

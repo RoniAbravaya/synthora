@@ -54,7 +54,7 @@ class TikTokClient(BaseSocialClient):
         self.default_config = OAuthConfig(
             client_id=settings.TIKTOK_CLIENT_KEY or "",
             client_secret=settings.TIKTOK_CLIENT_SECRET or "",
-            redirect_uri=settings.TIKTOK_REDIRECT_URI or "",
+            redirect_uri=settings.tiktok_redirect_uri,
             scopes=self.DEFAULT_SCOPES,
         )
     
