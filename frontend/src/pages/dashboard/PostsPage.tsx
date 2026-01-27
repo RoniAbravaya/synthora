@@ -1,11 +1,12 @@
 /**
  * Posts Page
  * 
- * Manage social media posts with filtering and actions.
+ * Manage social media posts with filtering, creation, and actions.
+ * Supports creating posts from videos via the ?video= query parameter.
  */
 
-import { useState } from "react"
-import { Link } from "react-router-dom"
+import { useState, useEffect } from "react"
+import { Link, useSearchParams } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Plus,
@@ -24,12 +25,18 @@ import {
   Send,
   AlertCircle,
   CheckCircle2,
+  Video,
+  X,
 } from "lucide-react"
 import { cn, formatDate, formatRelativeTime } from "@/lib/utils"
 import { postsService } from "@/services/posts"
+import { videosService } from "@/services/videos"
+import { useSocialAccounts } from "@/hooks/useSocialAccounts"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -52,7 +59,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
 import toast from "react-hot-toast"
+import type { SocialPlatform, Video as VideoType } from "@/types"
 
 // =============================================================================
 // Types
@@ -73,8 +82,43 @@ interface Post {
 }
 
 // =============================================================================
-// Platform Icons
+// Platform Configuration
 // =============================================================================
+
+const platformConfig: Record<
+  SocialPlatform,
+  {
+    name: string
+    icon: typeof Youtube
+    color: string
+    bgColor: string
+  }
+> = {
+  youtube: {
+    name: "YouTube",
+    icon: Youtube,
+    color: "text-red-500",
+    bgColor: "bg-red-500/10",
+  },
+  tiktok: {
+    name: "TikTok",
+    icon: Music2,
+    color: "text-foreground",
+    bgColor: "bg-foreground/10",
+  },
+  instagram: {
+    name: "Instagram",
+    icon: Instagram,
+    color: "text-pink-500",
+    bgColor: "bg-pink-500/10",
+  },
+  facebook: {
+    name: "Facebook",
+    icon: Facebook,
+    color: "text-blue-600",
+    bgColor: "bg-blue-600/10",
+  },
+}
 
 const platformIcons: Record<string, React.ReactNode> = {
   youtube: <Youtube className="h-4 w-4 text-red-500" />,
@@ -205,14 +249,286 @@ function PostCard({ post, onDelete, onPublish }: PostCardProps) {
 }
 
 // =============================================================================
+// Create Post Dialog
+// =============================================================================
+
+interface CreatePostDialogProps {
+  open: boolean
+  onClose: () => void
+  videoId: string | null
+}
+
+function CreatePostDialog({ open, onClose, videoId }: CreatePostDialogProps) {
+  const queryClient = useQueryClient()
+  const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatform[]>([])
+  const [caption, setCaption] = useState("")
+  const [hashtags, setHashtags] = useState("")
+  const [publishNow, setPublishNow] = useState(true)
+
+  // Fetch the video details
+  const { data: videoData, isLoading: videoLoading } = useQuery({
+    queryKey: ["video", videoId],
+    queryFn: () => videosService.get(videoId!),
+    enabled: !!videoId && open,
+  })
+
+  // Fetch connected social accounts
+  const { data: accountsData, isLoading: accountsLoading } = useSocialAccounts()
+
+  const video = videoData?.video
+  const connectedAccounts = accountsData?.accounts || []
+  const connectedPlatforms = [...new Set(connectedAccounts.map((a) => a.platform as SocialPlatform))]
+
+  // Create post mutation
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (!videoId || selectedPlatforms.length === 0) {
+        throw new Error("Please select at least one platform")
+      }
+
+      const hashtagList = hashtags
+        .split(/[\s,#]+/)
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0)
+
+      const response = await postsService.create({
+        video_id: videoId,
+        title: video?.title || "New Video",
+        description: caption,
+        platforms: selectedPlatforms,
+        scheduled_at: publishNow ? undefined : undefined, // For now, always publish now or draft
+      })
+
+      // If publish now is selected, publish immediately
+      if (publishNow && response.post) {
+        await postsService.publishNow(response.post.id)
+      }
+
+      return response
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts"] })
+      toast.success(publishNow ? "Post published!" : "Post created as draft")
+      handleClose()
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to create post")
+    },
+  })
+
+  const handleClose = () => {
+    setSelectedPlatforms([])
+    setCaption("")
+    setHashtags("")
+    setPublishNow(true)
+    onClose()
+  }
+
+  const togglePlatform = (platform: SocialPlatform) => {
+    setSelectedPlatforms((prev) =>
+      prev.includes(platform)
+        ? prev.filter((p) => p !== platform)
+        : [...prev, platform]
+    )
+  }
+
+  const isLoading = videoLoading || accountsLoading
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Create Post</DialogTitle>
+          <DialogDescription>
+            Share your video to connected social media accounts
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : !video ? (
+          <div className="flex flex-col items-center justify-center py-8">
+            <AlertCircle className="h-8 w-8 text-muted-foreground" />
+            <p className="mt-2 text-sm text-muted-foreground">Video not found</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Video Preview */}
+            <div className="flex gap-4">
+              <div className="h-20 w-32 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
+                {video.thumbnail_url ? (
+                  <img
+                    src={video.thumbnail_url}
+                    alt={video.title || "Video"}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <Video className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+              <div className="flex-1">
+                <h4 className="font-medium">{video.title || "Untitled Video"}</h4>
+                <p className="text-sm text-muted-foreground">
+                  Created {formatRelativeTime(video.created_at)}
+                </p>
+              </div>
+            </div>
+
+            {/* Platform Selection */}
+            <div className="space-y-3">
+              <Label>Select Platforms</Label>
+              {connectedPlatforms.length === 0 ? (
+                <Card className="border-dashed">
+                  <CardContent className="flex flex-col items-center justify-center py-6">
+                    <AlertCircle className="h-8 w-8 text-muted-foreground" />
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      No social accounts connected
+                    </p>
+                    <Link to="/social-accounts">
+                      <Button variant="outline" size="sm" className="mt-4">
+                        Connect Accounts
+                      </Button>
+                    </Link>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {connectedPlatforms.map((platform) => {
+                    const config = platformConfig[platform]
+                    const Icon = config.icon
+                    const isSelected = selectedPlatforms.includes(platform)
+
+                    return (
+                      <button
+                        key={platform}
+                        onClick={() => togglePlatform(platform)}
+                        className={cn(
+                          "flex items-center gap-3 rounded-lg border p-3 text-left transition-colors",
+                          isSelected
+                            ? "border-primary bg-primary/5"
+                            : "border-border hover:bg-muted/50"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "flex h-8 w-8 items-center justify-center rounded-lg",
+                            config.bgColor
+                          )}
+                        >
+                          <Icon className={cn("h-4 w-4", config.color)} />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{config.name}</p>
+                        </div>
+                        {isSelected && (
+                          <CheckCircle2 className="h-4 w-4 text-primary" />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Caption */}
+            <div className="space-y-2">
+              <Label htmlFor="caption">Caption</Label>
+              <Textarea
+                id="caption"
+                placeholder="Write a caption for your post..."
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                rows={3}
+              />
+            </div>
+
+            {/* Hashtags */}
+            <div className="space-y-2">
+              <Label htmlFor="hashtags">Hashtags</Label>
+              <Input
+                id="hashtags"
+                placeholder="#viral #trending #content"
+                value={hashtags}
+                onChange={(e) => setHashtags(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Separate hashtags with spaces or commas
+              </p>
+            </div>
+
+            {/* Publish Option */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Publish Immediately</Label>
+                <p className="text-xs text-muted-foreground">
+                  {publishNow ? "Post will be published now" : "Post will be saved as draft"}
+                </p>
+              </div>
+              <Switch checked={publishNow} onCheckedChange={setPublishNow} />
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => createMutation.mutate()}
+            disabled={
+              createMutation.isPending ||
+              selectedPlatforms.length === 0 ||
+              !video
+            }
+          >
+            {createMutation.isPending && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            {publishNow ? "Publish" : "Save as Draft"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// =============================================================================
 // Main Page Component
 // =============================================================================
 
 export default function PostsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [platformFilter, setPlatformFilter] = useState<string>("all")
   const [deleteId, setDeleteId] = useState<string | null>(null)
+
+  // Get video ID from URL params
+  const videoIdFromUrl = searchParams.get("video")
+  const [createDialogOpen, setCreateDialogOpen] = useState(!!videoIdFromUrl)
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(videoIdFromUrl)
+
+  // Open create dialog when video param is present
+  useEffect(() => {
+    if (videoIdFromUrl) {
+      setSelectedVideoId(videoIdFromUrl)
+      setCreateDialogOpen(true)
+    }
+  }, [videoIdFromUrl])
+
+  const handleCloseCreateDialog = () => {
+    setCreateDialogOpen(false)
+    setSelectedVideoId(null)
+    // Remove video param from URL
+    if (videoIdFromUrl) {
+      searchParams.delete("video")
+      setSearchParams(searchParams)
+    }
+  }
 
   const queryClient = useQueryClient()
 
@@ -390,6 +706,13 @@ export default function PostsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Create Post Dialog */}
+      <CreatePostDialog
+        open={createDialogOpen}
+        onClose={handleCloseCreateDialog}
+        videoId={selectedVideoId}
+      />
     </div>
   )
 }

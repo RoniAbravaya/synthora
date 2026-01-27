@@ -202,12 +202,24 @@ export default function VideoDetailPage() {
   }
 
   const handleDownload = async () => {
-    if (!id) return
+    if (!id || !video?.video_url) return
     try {
-      const { url } = await videosService.getDownloadUrl(id)
-      window.open(url, "_blank")
+      // Create a temporary anchor element to trigger download
+      const link = document.createElement("a")
+      link.href = video.video_url
+      link.download = `${video.title || "video"}.mp4`
+      link.target = "_blank"
+      link.rel = "noopener noreferrer"
+      
+      // For cross-origin URLs, we can't force download due to CORS
+      // Opening in new tab is the best fallback
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+      toast.success("Download started - check your browser's download manager")
     } catch {
-      toast.error("Failed to get download URL")
+      toast.error("Failed to start download")
     }
   }
 

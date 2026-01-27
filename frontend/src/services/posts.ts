@@ -75,6 +75,12 @@ export const postsService = {
     ),
 
   /**
+   * Publish a post now (alias for publish).
+   */
+  publishNow: (id: string) =>
+    apiClient.post<{ post: Post }>(`/posts/${id}/publish`),
+
+  /**
    * Get calendar view of scheduled posts.
    */
   getCalendar: (year: number, month: number) =>

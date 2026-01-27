@@ -80,7 +80,7 @@ class PostService:
         if platform:
             # Handle both enum and string input
             platform_value = platform.value if hasattr(platform, 'value') else platform
-            query = query.filter(Post.platforms.contains([platform_value]))
+            query = query.filter(Post.platform == platform_value)
         
         total = query.count()
         
@@ -221,7 +221,10 @@ class PostService:
         platform_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> Post:
         """
-        Create a new post.
+        Create posts for the specified platforms.
+        
+        Creates one Post per platform (each Post is linked to one social account).
+        Returns the first post created.
         
         Args:
             user_id: User's UUID
@@ -234,7 +237,7 @@ class PostService:
             platform_overrides: Platform-specific overrides
             
         Returns:
-            Newly created Post instance
+            The first created Post instance
         """
         # Validate video
         video = self.db.query(Video).filter(Video.id == video_id).first()
@@ -253,31 +256,48 @@ class PostService:
         else:
             status = "draft"
         
-        # Initialize platform statuses
-        platform_status = {
-            p.value: {"status": "pending", "post_id": None, "post_url": None}
-            for p in platforms
-        }
+        created_posts = []
         
-        post = Post(
-            user_id=user_id,
-            video_id=video_id,
-            title=title or video.title,
-            description=description,
-            hashtags=hashtags or [],
-            platforms=[p.value for p in platforms],
-            platform_status=platform_status,
-            platform_overrides=platform_overrides or {},
-            status=status,
-            scheduled_at=scheduled_at,
-        )
+        for platform in platforms:
+            # Get the user's social account for this platform
+            platform_value = platform.value if hasattr(platform, 'value') else platform
+            social_account = self.db.query(SocialAccount).filter(
+                SocialAccount.user_id == user_id,
+                SocialAccount.platform == platform_value,
+                SocialAccount.is_active == True,
+            ).first()
+            
+            if not social_account:
+                raise ValueError(f"No active {platform_value} account connected")
+            
+            # Get platform-specific overrides
+            overrides = (platform_overrides or {}).get(platform_value, {})
+            
+            post = Post(
+                user_id=user_id,
+                video_id=video_id,
+                social_account_id=social_account.id,
+                platform=platform_value,
+                caption=overrides.get("description") or description,
+                hashtags=hashtags or [],
+                status=status,
+                scheduled_at=scheduled_at,
+                platform_config=overrides,
+            )
+            
+            self.db.add(post)
+            created_posts.append(post)
         
-        self.db.add(post)
         self.db.commit()
-        self.db.refresh(post)
         
-        logger.info(f"Created post: {post.id} for video {video_id}")
-        return post
+        # Refresh all posts
+        for post in created_posts:
+            self.db.refresh(post)
+        
+        logger.info(f"Created {len(created_posts)} posts for video {video_id}")
+        
+        # Return the first post (for backwards compatibility)
+        return created_posts[0] if created_posts else None
     
     def update_post(
         self,
@@ -294,10 +314,10 @@ class PostService:
         
         Args:
             post: Post to update
-            title: New title
-            description: New description
+            title: New title (unused, kept for compatibility)
+            description: New description/caption
             hashtags: New hashtags
-            platforms: New platforms
+            platforms: New platforms (note: cannot change platform for existing post)
             scheduled_at: New scheduled time
             platform_overrides: New platform overrides
             
@@ -307,26 +327,18 @@ class PostService:
         if post.status in ["publishing", "published"]:
             raise ValueError("Cannot update a post that is publishing or published")
         
-        if title is not None:
-            post.title = title
-        
+        # Note: title is not used - Post model uses caption
         if description is not None:
-            post.description = description
+            post.caption = description
         
         if hashtags is not None:
             post.hashtags = hashtags
         
-        if platforms is not None:
-            post.platforms = [p.value for p in platforms]
-            # Update platform status
-            current_statuses = post.platform_status or {}
-            new_statuses = {}
-            for p in platforms:
-                if p.value in current_statuses:
-                    new_statuses[p.value] = current_statuses[p.value]
-                else:
-                    new_statuses[p.value] = {"status": "pending", "post_id": None, "post_url": None}
-            post.platform_status = new_statuses
+        # Cannot change platform for existing post
+        if platforms is not None and len(platforms) > 0:
+            platform_value = platforms[0].value if hasattr(platforms[0], 'value') else platforms[0]
+            if platform_value != post.platform:
+                logger.warning(f"Cannot change platform for post {post.id}")
         
         if scheduled_at is not None:
             post.scheduled_at = scheduled_at
@@ -334,7 +346,7 @@ class PostService:
                 post.status = "scheduled"
         
         if platform_overrides is not None:
-            post.platform_overrides = platform_overrides
+            post.platform_config = platform_overrides
         
         self.db.commit()
         self.db.refresh(post)
@@ -373,7 +385,7 @@ class PostService:
         Returns:
             Updated Post instance
         """
-        if post.status not in ["draft", "scheduled", "partially_published"]:
+        if post.status not in ["draft", "scheduled"]:
             raise ValueError(f"Cannot publish post in status: {post.status}")
         
         post.status = "publishing"
@@ -383,103 +395,82 @@ class PostService:
         
         return post
     
-    def update_platform_status(
+    def mark_published(
         self,
         post: Post,
-        platform: str,
-        status: str,
-        post_id: Optional[str] = None,
+        platform_post_id: Optional[str] = None,
         post_url: Optional[str] = None,
-        error: Optional[str] = None,
     ) -> Post:
         """
-        Update the status for a specific platform.
+        Mark a post as successfully published.
         
         Args:
             post: Post to update
-            platform: Platform to update (string)
-            status: New status (pending, publishing, published, failed)
-            post_id: Platform-specific post ID
+            platform_post_id: Platform-specific post ID
             post_url: URL to the post
-            error: Error message if failed
             
         Returns:
             Updated Post instance
         """
-        if post.platform_status is None:
-            post.platform_status = {}
-        
-        # Handle both enum and string input
-        platform_value = platform.value if hasattr(platform, 'value') else platform
-        
-        post.platform_status[platform_value] = {
-            "status": status,
-            "post_id": post_id,
-            "post_url": post_url,
-            "error": error,
-            "updated_at": datetime.utcnow().isoformat(),
-        }
-        
-        # Update overall status based on platform statuses
-        self._update_overall_status(post)
+        post.status = "published"
+        post.published_at = datetime.utcnow()
+        post.platform_post_id = platform_post_id
+        post.post_url = post_url
         
         self.db.commit()
         self.db.refresh(post)
         
         return post
     
-    def _update_overall_status(self, post: Post) -> None:
-        """Update overall post status based on platform statuses."""
-        if not post.platform_status:
-            return
-        
-        statuses = [s.get("status") for s in post.platform_status.values()]
-        
-        if all(s == "published" for s in statuses):
-            post.status = "published"
-            post.published_at = datetime.utcnow()
-        elif all(s == "failed" for s in statuses):
-            post.status = "failed"
-        elif any(s == "published" for s in statuses) and any(s == "failed" for s in statuses):
-            post.status = "partially_published"
-        elif any(s == "publishing" for s in statuses):
-            post.status = "publishing"
-    
-    def complete_publishing(
+    def mark_failed(
         self,
         post: Post,
-        results: Dict[str, Dict[str, Any]],
+        error_message: str,
     ) -> Post:
         """
-        Complete publishing with results from all platforms.
+        Mark a post as failed.
         
         Args:
-            post: Post to complete
-            results: Results by platform
+            post: Post to update
+            error_message: Error message
             
         Returns:
             Updated Post instance
         """
-        for platform_str, result in results.items():
-            platform = SocialPlatform(platform_str)
-            
-            if result.get("success"):
-                self.update_platform_status(
-                    post,
-                    platform,
-                    "published",
-                    post_id=result.get("post_id"),
-                    post_url=result.get("post_url"),
-                )
-            else:
-                self.update_platform_status(
-                    post,
-                    platform,
-                    "failed",
-                    error=result.get("error"),
-                )
+        post.status = "failed"
+        post.error_message = error_message
+        post.retry_count += 1
+        
+        self.db.commit()
+        self.db.refresh(post)
         
         return post
+    
+    def complete_publishing(
+        self,
+        post: Post,
+        success: bool,
+        platform_post_id: Optional[str] = None,
+        post_url: Optional[str] = None,
+        error: Optional[str] = None,
+    ) -> Post:
+        """
+        Complete publishing with result.
+        
+        Args:
+            post: Post to complete
+            success: Whether publishing succeeded
+            platform_post_id: Platform-specific post ID
+            post_url: URL to the post
+            error: Error message if failed
+            
+        Returns:
+            Updated Post instance
+        """
+        if success:
+            return self.mark_published(post, platform_post_id, post_url)
+        else:
+            return self.mark_failed(post, error or "Publishing failed")
     
     # =========================================================================
     # Statistics
