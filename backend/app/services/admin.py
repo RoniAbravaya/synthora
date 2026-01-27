@@ -75,6 +75,8 @@ class AdminService:
         Returns:
             Dictionary with users and pagination info
         """
+        logger.info(f"AdminService.get_users called: search={search}, role={role}, is_active={is_active}")
+        
         query = self.db.query(User)
         
         # Apply filters
@@ -86,15 +88,21 @@ class AdminService:
                     User.display_name.ilike(search_term),
                 )
             )
+            logger.info(f"Applied search filter: {search_term}")
         
         if role:
-            query = query.filter(User.role == role)
+            # Use the string value for comparison with the String column
+            role_value = role.value if hasattr(role, 'value') else role
+            query = query.filter(User.role == role_value)
+            logger.info(f"Applied role filter: {role_value}")
         
         if is_active is not None:
             query = query.filter(User.is_active == is_active)
+            logger.info(f"Applied is_active filter: {is_active}")
         
         # Get total count
         total = query.count()
+        logger.info(f"Total users matching filters: {total}")
         
         # Apply sorting
         sort_column = getattr(User, sort_by, User.created_at)
@@ -105,6 +113,7 @@ class AdminService:
         
         # Apply pagination
         users = query.offset(offset).limit(limit).all()
+        logger.info(f"Users fetched after pagination: {len(users)}")
         
         return {
             "users": users,

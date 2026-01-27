@@ -66,6 +66,9 @@ async def list_users(
     """
     List all users with filtering and pagination.
     """
+    logger.info(f"list_users called: search={search}, role={role}, is_active={is_active}, sort_by={sort_by}, sort_order={sort_order}, limit={limit}, offset={offset}")
+    logger.info(f"Admin user making request: {current_user.email}")
+    
     service = AdminService(db)
     
     # Parse role if provided
@@ -89,8 +92,13 @@ async def list_users(
         offset=offset,
     )
     
-    return AdminUserListResponse(
-        users=[
+    logger.info(f"get_users returned: total={result['total']}, users_count={len(result['users'])}")
+    
+    # Build response
+    user_items = []
+    for u in result["users"]:
+        logger.info(f"Processing user: id={u.id}, email={u.email}, role={u.role}, is_active={u.is_active}")
+        user_items.append(
             AdminUserItem(
                 id=u.id,
                 email=u.email,
@@ -100,8 +108,12 @@ async def list_users(
                 created_at=u.created_at,
                 last_login=u.last_login,
             )
-            for u in result["users"]
-        ],
+        )
+    
+    logger.info(f"Returning {len(user_items)} users")
+    
+    return AdminUserListResponse(
+        users=user_items,
         total=result["total"],
         limit=result["limit"],
         offset=result["offset"],
