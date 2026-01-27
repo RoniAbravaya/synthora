@@ -105,6 +105,35 @@ async def list_scheduled_posts(
     return [_post_to_response(p) for p in posts]
 
 
+@router.get("/upcoming", response_model=PostListResponse)
+async def list_upcoming_posts(
+    limit: int = Query(default=10, ge=1, le=50),
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    List upcoming scheduled posts (sorted by scheduled_at ascending).
+    
+    **Query Parameters:**
+    - `limit`: Maximum number of posts to return (default 10, max 50)
+    
+    **Requires:** Authentication
+    """
+    post_service = PostService(db)
+    
+    posts = post_service.get_upcoming_posts(
+        user_id=user.id,
+        limit=limit,
+    )
+    
+    return PostListResponse(
+        posts=[_post_to_response(p) for p in posts],
+        total=len(posts),
+        skip=0,
+        limit=limit,
+    )
+
+
 @router.get("/calendar/{year}/{month}", response_model=CalendarResponse)
 async def get_calendar(
     year: int,

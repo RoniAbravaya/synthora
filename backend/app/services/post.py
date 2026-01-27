@@ -139,6 +139,34 @@ class PostService:
             )
         ).order_by(Post.scheduled_at.asc()).limit(limit).all()
     
+    def get_upcoming_posts(
+        self,
+        user_id: UUID,
+        limit: int = 10,
+    ) -> List[Post]:
+        """
+        Get upcoming scheduled posts for a user.
+        
+        Returns posts that are scheduled for the future, sorted by scheduled_at
+        in ascending order (soonest first).
+        
+        Args:
+            user_id: User's UUID
+            limit: Maximum number of posts to return (default 10)
+            
+        Returns:
+            List of upcoming scheduled posts
+        """
+        now = datetime.utcnow()
+        
+        return self.db.query(Post).filter(
+            and_(
+                Post.user_id == user_id,
+                Post.status == "scheduled",
+                Post.scheduled_at > now,
+            )
+        ).order_by(Post.scheduled_at.asc()).limit(limit).all()
+    
     def get_calendar_data(
         self,
         user_id: UUID,
