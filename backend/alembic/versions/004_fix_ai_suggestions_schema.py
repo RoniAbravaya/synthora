@@ -18,7 +18,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '004_fix_ai_suggestions'
-down_revision = '003_increase_url_column_sizes'
+down_revision = '003_url_columns'
 branch_labels = None
 depends_on = None
 
