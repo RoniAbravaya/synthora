@@ -3,60 +3,113 @@
  */
 
 import { apiClient } from "@/lib/api"
-import type { Suggestion, SuggestionType } from "@/types"
+import type { SuggestionType } from "@/types"
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export interface SuggestionItem {
+  id: string
+  suggestion_type: string
+  title: string
+  description: string
+  priority: string
+  is_read: boolean
+  action_type: string | null
+  expires_at: string | null
+  created_at: string
+}
 
 export interface SuggestionListResponse {
-  suggestions: Suggestion[]
+  suggestions: SuggestionItem[]
   total: number
   unread_count: number
 }
 
-export interface PostingTimeSuggestion {
-  platform: string
-  day_of_week: number
-  hour: number
-  confidence: number
-  reasoning: string
+export interface PostingTimeAnalysis {
+  best_day: string
+  best_day_index: number
+  best_hour: number
+  potential_improvement: number
+  current_avg_engagement: number
+  best_avg_engagement: number
 }
 
-export interface ContentSuggestion {
+export interface PostingTimeResponse {
+  success: boolean
+  posts_analyzed: number
+  period_days: number
+  overall: PostingTimeAnalysis | null
+  by_platform: Record<string, PostingTimeAnalysis>
+  error: string | null
+}
+
+export interface ContentIdea {
   topic: string
   hook: string
-  key_points: string[]
-  call_to_action: string
-  estimated_engagement: number
+  description: string
+  suggested_hashtags: string[]
+  estimated_engagement: string
 }
 
-export interface TrendAlert {
-  trend: string
-  platform: string
-  relevance_score: number
+export interface ContentIdeasResponse {
+  ideas: ContentIdea[]
+}
+
+export interface TrendItem {
+  topic: string
+  description: string
+  platforms: string[]
+  virality_score: number
   suggested_angle: string
-  expires_at: string
+  relevance_score: number | null
 }
 
-export interface PerformancePrediction {
-  video_id: string
-  predicted_views: number
-  predicted_engagement: number
-  confidence: number
-  factors: string[]
+export interface TrendsResponse {
+  trends: TrendItem[]
 }
 
-export interface ImprovementTip {
-  area: string
-  current_score: number
+export interface ImprovementItem {
+  category: string
+  issue: string
   suggestion: string
-  expected_improvement: number
-  priority: "high" | "medium" | "low"
+  impact: string
 }
+
+export interface UnderperformingPost {
+  post_id: string
+  title: string | null
+  current_engagement: number
+  improvements: ImprovementItem[]
+}
+
+export interface ImprovementsResponse {
+  underperforming_posts: UnderperformingPost[]
+}
+
+// =============================================================================
+// Service
+// =============================================================================
 
 export const suggestionsService = {
   /**
    * Get all suggestions.
    */
-  list: (params?: { type?: SuggestionType; unread_only?: boolean }) =>
-    apiClient.get<SuggestionListResponse>("/suggestions", { params }),
+  list: (params?: { 
+    type?: SuggestionType
+    include_read?: boolean
+    include_dismissed?: boolean
+    limit?: number
+  }) =>
+    apiClient.get<SuggestionListResponse>("/suggestions", { 
+      params: {
+        suggestion_type: params?.type,
+        include_read: params?.include_read,
+        include_dismissed: params?.include_dismissed,
+        limit: params?.limit,
+      }
+    }),
 
   /**
    * Get unread count.
@@ -68,48 +121,54 @@ export const suggestionsService = {
    * Mark suggestion as read.
    */
   markAsRead: (id: string) =>
-    apiClient.patch<{ message: string }>(`/suggestions/${id}/read`),
+    apiClient.post<unknown>(`/suggestions/${id}/read`),
+
+  /**
+   * Mark all suggestions as read.
+   */
+  markAllAsRead: () =>
+    apiClient.post<{ message: string }>("/suggestions/read-all"),
 
   /**
    * Dismiss a suggestion.
    */
-  dismiss: (id: string) =>
-    apiClient.patch<{ message: string }>(`/suggestions/${id}/dismiss`),
+  dismiss: (id: string, reason?: string) =>
+    apiClient.post<unknown>(`/suggestions/${id}/dismiss`, { reason }),
 
   /**
    * Mark suggestion as acted upon.
    */
   markActedOn: (id: string) =>
-    apiClient.patch<{ message: string }>(`/suggestions/${id}/acted`),
+    apiClient.post<unknown>(`/suggestions/${id}/acted`),
 
   /**
-   * Get optimal posting times.
+   * Analyze posting times.
    */
-  getPostingTimes: () =>
-    apiClient.get<{ suggestions: PostingTimeSuggestion[] }>("/suggestions/posting-times"),
+  analyzePostingTimes: (days?: number) =>
+    apiClient.get<PostingTimeResponse>("/suggestions/analysis/posting-times", { params: { days } }),
 
   /**
    * Get content ideas.
    */
   getContentIdeas: (count?: number) =>
-    apiClient.get<{ suggestions: ContentSuggestion[] }>("/suggestions/content", { params: { count } }),
+    apiClient.get<ContentIdeasResponse>("/suggestions/analysis/content-ideas", { params: { count } }),
 
   /**
-   * Get trend alerts.
+   * Get trending topics.
    */
-  getTrends: () =>
-    apiClient.get<{ alerts: TrendAlert[] }>("/suggestions/trends"),
+  getTrends: (category?: string) =>
+    apiClient.get<TrendsResponse>("/suggestions/analysis/trends", { params: { category } }),
 
   /**
-   * Get performance predictions.
-   */
-  getPredictions: () =>
-    apiClient.get<{ predictions: PerformancePrediction[] }>("/suggestions/predictions"),
-
-  /**
-   * Get improvement tips.
+   * Get improvement suggestions.
    */
   getImprovements: () =>
-    apiClient.get<{ tips: ImprovementTip[] }>("/suggestions/improvements"),
+    apiClient.get<ImprovementsResponse>("/suggestions/analysis/improvements"),
+
+  /**
+   * Generate new suggestions.
+   */
+  generate: () =>
+    apiClient.post<{ message: string; job_id: string; estimated_time: string }>("/suggestions/generate"),
 }
 

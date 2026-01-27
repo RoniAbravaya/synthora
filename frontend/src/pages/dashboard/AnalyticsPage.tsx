@@ -5,16 +5,15 @@
  */
 
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { Link } from "react-router-dom"
 import {
   BarChart3,
   TrendingUp,
-  TrendingDown,
   Eye,
   Heart,
   MessageCircle,
   Share2,
-  Clock,
   Youtube,
   Instagram,
   Facebook,
@@ -23,8 +22,11 @@ import {
   Calendar,
   ArrowUpRight,
   ArrowDownRight,
+  RefreshCw,
+  Play,
+  ExternalLink,
 } from "lucide-react"
-import { cn, formatNumber, formatCompactNumber } from "@/lib/utils"
+import { cn, formatNumber, formatCompactNumber, formatRelativeTime } from "@/lib/utils"
 import { analyticsService } from "@/services/analytics"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -36,7 +38,6 @@ import {
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
-import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 
 // =============================================================================
@@ -91,7 +92,7 @@ const platformColors: Record<string, string> = {
 interface StatCardProps {
   title: string
   value: number
-  change: number
+  change?: number | null
   icon: React.ReactNode
   format?: "number" | "compact" | "percent"
 }
@@ -99,6 +100,7 @@ interface StatCardProps {
 function StatCard({ title, value, change, icon, format = "compact" }: StatCardProps) {
   const safeValue = value ?? 0
   const safeChange = change ?? 0
+  const hasChange = change !== null && change !== undefined
   const isPositive = safeChange >= 0
   const formattedValue =
     format === "percent"
@@ -117,19 +119,21 @@ function StatCard({ title, value, change, icon, format = "compact" }: StatCardPr
       </CardHeader>
       <CardContent>
         <div className="text-2xl font-bold">{formattedValue}</div>
-        <div
-          className={cn(
-            "mt-1 flex items-center text-xs",
-            isPositive ? "text-green-500" : "text-red-500"
-          )}
-        >
-          {isPositive ? (
-            <ArrowUpRight className="mr-1 h-3 w-3" />
-          ) : (
-            <ArrowDownRight className="mr-1 h-3 w-3" />
-          )}
-          {Math.abs(safeChange).toFixed(1)}% from last period
-        </div>
+        {hasChange && (
+          <div
+            className={cn(
+              "mt-1 flex items-center text-xs",
+              isPositive ? "text-green-500" : "text-red-500"
+            )}
+          >
+            {isPositive ? (
+              <ArrowUpRight className="mr-1 h-3 w-3" />
+            ) : (
+              <ArrowDownRight className="mr-1 h-3 w-3" />
+            )}
+            {Math.abs(safeChange).toFixed(1)}% from last period
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -154,10 +158,12 @@ function PlatformCard({ stats }: PlatformCardProps) {
           <div
             className={cn(
               "flex h-10 w-10 items-center justify-center rounded-lg",
-              stats.platform === "instagram" ? "bg-gradient-to-r from-purple-500/10 to-pink-500/10" : `${platformColors[stats.platform]}/10`
+              stats.platform === "instagram" 
+                ? "bg-gradient-to-r from-purple-500/10 to-pink-500/10" 
+                : `${platformColors[stats.platform]?.replace("bg-", "bg-")}/10`
             )}
           >
-            {platformIcons[stats.platform]}
+            {platformIcons[stats.platform] || <BarChart3 className="h-5 w-5" />}
           </div>
           <div>
             <CardTitle className="text-base capitalize">{stats.platform}</CardTitle>
@@ -198,10 +204,143 @@ function PlatformCard({ stats }: PlatformCardProps) {
 }
 
 // =============================================================================
-// Main Page Component
+// Time Series Chart (Simple Bar Chart)
 // =============================================================================
 
-// Helper to convert period string to days number
+interface TimeSeriesChartProps {
+  data: Array<{ date: string; value: number }>
+  metric: string
+  color?: string
+}
+
+function TimeSeriesChart({ data, metric, color = "bg-primary" }: TimeSeriesChartProps) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+        No data available
+      </div>
+    )
+  }
+
+  const maxValue = Math.max(...data.map(d => d.value), 1)
+  const total = data.reduce((sum, d) => sum + d.value, 0)
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium capitalize">{metric}</span>
+        <span className="text-muted-foreground">
+          Total: {formatCompactNumber(total)}
+        </span>
+      </div>
+      <div className="flex h-32 items-end gap-1">
+        {data.map((d, i) => (
+          <div
+            key={i}
+            className="group relative flex-1"
+          >
+            <div
+              className={cn("w-full rounded-t transition-all hover:opacity-80", color)}
+              style={{ height: `${Math.max((d.value / maxValue) * 100, 2)}%` }}
+            />
+            <div className="absolute -top-8 left-1/2 -translate-x-1/2 rounded bg-popover px-2 py-1 text-xs opacity-0 shadow-md transition-opacity group-hover:opacity-100 whitespace-nowrap z-10">
+              {d.date}: {formatCompactNumber(d.value)}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>{data[0]?.date}</span>
+        <span>{data[data.length - 1]?.date}</span>
+      </div>
+    </div>
+  )
+}
+
+// =============================================================================
+// Top Performing Item
+// =============================================================================
+
+interface TopPerformingItemProps {
+  item: {
+    post_id: string
+    video_id: string
+    title: string
+    thumbnail_url: string | null
+    platforms: string[]
+    published_at: string | null
+    metrics: {
+      views: number
+      likes: number
+      comments: number
+      shares: number
+    }
+  }
+  rank: number
+}
+
+function TopPerformingItemCard({ item, rank }: TopPerformingItemProps) {
+  return (
+    <div className="flex items-center gap-4 rounded-lg border p-3 hover:bg-muted/50 transition-colors">
+      <span className="text-2xl font-bold text-muted-foreground w-8 text-center">
+        {rank}
+      </span>
+      <div className="h-16 w-28 rounded bg-muted flex items-center justify-center overflow-hidden shrink-0">
+        {item.thumbnail_url ? (
+          <img 
+            src={item.thumbnail_url} 
+            alt={item.title} 
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <Play className="h-6 w-6 text-muted-foreground" />
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <Link 
+          to={`/videos/${item.video_id}`}
+          className="font-medium hover:underline line-clamp-1"
+        >
+          {item.title || "Untitled"}
+        </Link>
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+          {item.platforms?.map((p) => (
+            <span key={p} className="capitalize">{p}</span>
+          ))}
+          {item.published_at && (
+            <>
+              <span>•</span>
+              <span>{formatRelativeTime(item.published_at)}</span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-right">
+        <div className="flex items-center justify-end gap-1 text-sm">
+          <Eye className="h-3 w-3 text-muted-foreground" />
+          {formatCompactNumber(item.metrics?.views || 0)}
+        </div>
+        <div className="flex items-center justify-end gap-1 text-sm">
+          <Heart className="h-3 w-3 text-muted-foreground" />
+          {formatCompactNumber(item.metrics?.likes || 0)}
+        </div>
+        <div className="flex items-center justify-end gap-1 text-sm">
+          <MessageCircle className="h-3 w-3 text-muted-foreground" />
+          {formatCompactNumber(item.metrics?.comments || 0)}
+        </div>
+        <div className="flex items-center justify-end gap-1 text-sm">
+          <Share2 className="h-3 w-3 text-muted-foreground" />
+          {formatCompactNumber(item.metrics?.shares || 0)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
 function periodToDays(period: string): number {
   switch (period) {
     case "7d": return 7
@@ -212,9 +351,14 @@ function periodToDays(period: string): number {
   }
 }
 
+// =============================================================================
+// Main Page Component
+// =============================================================================
+
 export default function AnalyticsPage() {
-  const [period, setPeriod] = useState("7d")
-  const [platform, setPlatform] = useState("all")
+  const [period, setPeriod] = useState("30d")
+  const [timeSeriesMetric, setTimeSeriesMetric] = useState("views")
+  const queryClient = useQueryClient()
 
   const days = periodToDays(period)
 
@@ -230,6 +374,29 @@ export default function AnalyticsPage() {
     queryFn: () => analyticsService.getPlatformComparison(days),
   })
 
+  // Fetch time series data
+  const { data: timeSeriesData, isLoading: timeSeriesLoading } = useQuery({
+    queryKey: ["analytics", "timeSeries", timeSeriesMetric, days],
+    queryFn: () => analyticsService.getTimeSeries(timeSeriesMetric, period as "7d" | "30d" | "90d"),
+  })
+
+  // Fetch top performing
+  const { data: topPerformingData, isLoading: topPerformingLoading } = useQuery({
+    queryKey: ["analytics", "topPerforming", "views", 5],
+    queryFn: () => analyticsService.getTopPerforming("views", 5),
+  })
+
+  // Sync mutation
+  const syncMutation = useMutation({
+    mutationFn: () => analyticsService.sync(),
+    onSuccess: () => {
+      // Invalidate all analytics queries after a delay
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["analytics"] })
+      }, 3000)
+    },
+  })
+
   // Map API response to expected structure with safe defaults
   const overview: AnalyticsOverview = {
     total_views: overviewData?.summary?.views ?? 0,
@@ -238,8 +405,8 @@ export default function AnalyticsPage() {
     total_shares: overviewData?.summary?.shares ?? 0,
     total_posts: overviewData?.total_posts ?? 0,
     avg_engagement_rate: overviewData?.summary?.engagement_rate ?? 0,
-    views_change: 0, // API doesn't provide change data yet
-    likes_change: 0,
+    views_change: overviewData?.views_change ?? null,
+    likes_change: overviewData?.likes_change ?? null,
     comments_change: 0,
     shares_change: 0,
   }
@@ -253,6 +420,12 @@ export default function AnalyticsPage() {
     shares: p.shares ?? 0,
     posts: p.posts ?? 0,
     engagement_rate: p.engagement_rate ?? 0,
+  }))
+
+  // Map time series data
+  const timeSeriesPoints = (timeSeriesData?.data_points || timeSeriesData?.data || []).map((d: any) => ({
+    date: d.date,
+    value: d.value,
   }))
 
   const isLoading = overviewLoading || platformLoading
@@ -291,6 +464,18 @@ export default function AnalyticsPage() {
               <SelectItem value="1y">Last year</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            variant="outline"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+          >
+            {syncMutation.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            Sync
+          </Button>
         </div>
       </div>
 
@@ -338,33 +523,91 @@ export default function AnalyticsPage() {
             <StatCard
               title="Engagement Rate"
               value={overview.avg_engagement_rate}
-              change={0}
               icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
               format="percent"
             />
           </div>
 
+          {/* Time Series Chart */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle>Performance Over Time</CardTitle>
+                  <CardDescription>
+                    Track your metrics over the selected period
+                  </CardDescription>
+                </div>
+                <Tabs value={timeSeriesMetric} onValueChange={setTimeSeriesMetric}>
+                  <TabsList>
+                    <TabsTrigger value="views">Views</TabsTrigger>
+                    <TabsTrigger value="likes">Likes</TabsTrigger>
+                    <TabsTrigger value="comments">Comments</TabsTrigger>
+                    <TabsTrigger value="shares">Shares</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {timeSeriesLoading ? (
+                <div className="flex h-40 items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <TimeSeriesChart
+                  data={timeSeriesPoints}
+                  metric={timeSeriesMetric}
+                  color={
+                    timeSeriesMetric === "views" ? "bg-blue-500" :
+                    timeSeriesMetric === "likes" ? "bg-red-500" :
+                    timeSeriesMetric === "comments" ? "bg-green-500" :
+                    "bg-purple-500"
+                  }
+                />
+              )}
+            </CardContent>
+          </Card>
+
           {/* Platform Breakdown */}
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Platform Performance</h2>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {platformStats.map((stats) => (
-                <PlatformCard key={stats.platform} stats={stats} />
-              ))}
+          {platformStats.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold">Platform Performance</h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                {platformStats.map((stats) => (
+                  <PlatformCard key={stats.platform} stats={stats} />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Top Performing Content */}
           <Card>
             <CardHeader>
               <CardTitle>Top Performing Content</CardTitle>
-              <CardDescription>Your best performing posts this period</CardDescription>
+              <CardDescription>Your best performing posts by views</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center text-muted-foreground py-8">
-                <BarChart3 className="mx-auto h-8 w-8 mb-2" />
-                <p>Detailed analytics charts coming soon</p>
-              </div>
+              {topPerformingLoading ? (
+                <div className="flex h-40 items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : topPerformingData?.items && topPerformingData.items.length > 0 ? (
+                <div className="space-y-3">
+                  {topPerformingData.items.map((item: any, index: number) => (
+                    <TopPerformingItemCard
+                      key={item.post_id}
+                      item={item}
+                      rank={index + 1}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center text-muted-foreground py-8">
+                  <BarChart3 className="mx-auto h-8 w-8 mb-2" />
+                  <p>No top performing content yet</p>
+                  <p className="text-sm">Publish content to see your top performers</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </>

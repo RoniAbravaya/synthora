@@ -9,4 +9,5 @@ export * from "./useNotifications"
 export * from "./useSubscription"
 export * from "./useSocialAccounts"
 export * from "./useAdmin"
+export * from "./useSuggestions"
 
