@@ -630,9 +630,10 @@ export default function AdminUsersPage() {
 
   const { data, isLoading, refetch } = useAdminUsers(filters)
 
-  // Debounced search
+  // Debounced search using useCallback
   const debouncedSearch = useCallback(
-    debounce((value: string) => {
+    debounce((...args: unknown[]) => {
+      const value = args[0] as string
       setFilters((f) => ({ ...f, search: value || undefined, offset: 0 }))
     }, 300),
     []

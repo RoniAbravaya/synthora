@@ -10,6 +10,20 @@ import { adminService, type PlatformStats, type ActivityStats, type TopUser, typ
 import type { UserRole } from "@/types"
 
 // =============================================================================
+// Types
+// =============================================================================
+
+export interface UserListFilters {
+  search?: string
+  role?: UserRole
+  is_active?: boolean
+  sort_by?: string
+  sort_order?: "asc" | "desc"
+  limit?: number
+  offset?: number
+}
+
+// =============================================================================
 // Query Keys
 // =============================================================================
 
@@ -18,7 +32,7 @@ export const adminKeys = {
   stats: () => [...adminKeys.all, "stats"] as const,
   activityStats: (days?: number) => [...adminKeys.all, "activity", days] as const,
   topUsers: (metric?: string, limit?: number) => [...adminKeys.all, "topUsers", metric, limit] as const,
-  users: (filters?: Record<string, unknown>) => [...adminKeys.all, "users", filters] as const,
+  users: (filters?: UserListFilters) => [...adminKeys.all, "users", filters] as const,
   user: (userId: string) => [...adminKeys.all, "user", userId] as const,
   settings: () => [...adminKeys.all, "settings"] as const,
   setting: (key: string) => [...adminKeys.all, "setting", key] as const,
@@ -64,16 +78,6 @@ export function useAdminTopUsers(metric: "videos" | "posts" = "videos", limit: n
 // =============================================================================
 // User Management Hooks
 // =============================================================================
-
-export interface UserListFilters {
-  search?: string
-  role?: UserRole
-  is_active?: boolean
-  sort_by?: string
-  sort_order?: "asc" | "desc"
-  limit?: number
-  offset?: number
-}
 
 /**
  * Hook to fetch users with filters.
