@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 
 def sync_post_analytics_job(post_id: str) -> dict:
     """
-    Sync analytics for a specific post across all platforms.
+    Sync analytics for a specific post.
+    
+    Each post is linked to one platform and one social account.
     
     Args:
         post_id: Post UUID string
@@ -53,87 +55,81 @@ def sync_post_analytics_job(post_id: str) -> dict:
         if post.status != "published":
             return {"success": False, "error": "Post not published"}
         
+        # Get the platform post ID (stored after successful publish)
+        platform_post_id = post.platform_post_id
+        if not platform_post_id:
+            return {"success": False, "error": "No platform post ID (post may not be fully published)"}
+        
+        platform_name = post.platform
+        
         analytics_service = AnalyticsService(db)
-        results = {}
         
-        # Sync each platform
-        for platform_name, platform_post_id in (post.platform_post_ids or {}).items():
-            if not platform_post_id:
-                continue
+        try:
+            # Get the social account for this post
+            social_account = db.query(SocialAccount).filter(
+                SocialAccount.id == post.social_account_id,
+                SocialAccount.is_active == True,
+            ).first()
             
+            if not social_account:
+                return {"success": False, "error": "No connected account found"}
+            
+            # Decrypt access token
+            access_token = decrypt_value(social_account.access_token_encrypted)
+            refresh_token = None
+            if social_account.refresh_token_encrypted:
+                refresh_token = decrypt_value(social_account.refresh_token_encrypted)
+            
+            # Get fetcher
+            fetcher_class = get_fetcher(platform_name)
+            fetcher = fetcher_class(access_token, refresh_token)
+            
+            # Fetch analytics (run async in sync context)
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             try:
-                # Get social account for this platform (platform stored as string in DB)
-                social_account = db.query(SocialAccount).filter(
-                    SocialAccount.user_id == post.user_id,
-                    SocialAccount.platform == platform_name,
-                    SocialAccount.is_active == True,
-                ).first()
+                fetch_result = loop.run_until_complete(
+                    fetcher.fetch_video_analytics(platform_post_id)
+                )
+            finally:
+                loop.close()
+            
+            if fetch_result.success:
+                # Store analytics
+                analytics_service.store_analytics(
+                    post_id=post_uuid,
+                    user_id=post.user_id,
+                    platform=platform_name,
+                    views=fetch_result.views,
+                    likes=fetch_result.likes,
+                    comments=fetch_result.comments,
+                    shares=fetch_result.shares,
+                    saves=fetch_result.saves,
+                    watch_time_seconds=fetch_result.watch_time_seconds,
+                    avg_watch_percentage=fetch_result.retention_rate,
+                    reach=fetch_result.reach,
+                    impressions=fetch_result.impressions,
+                    clicks=0,  # YouTube doesn't have clicks
+                    raw_data=fetch_result.raw_data,
+                )
                 
-                if not social_account:
-                    results[platform_name] = {"success": False, "error": "No connected account"}
-                    continue
+                return {
+                    "success": True,
+                    "post_id": post_id,
+                    "platform": platform_name,
+                    "views": fetch_result.views,
+                    "likes": fetch_result.likes,
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": fetch_result.error,
+                }
                 
-                # Decrypt access token
-                access_token = decrypt_value(social_account.access_token_encrypted)
-                refresh_token = None
-                if social_account.refresh_token_encrypted:
-                    refresh_token = decrypt_value(social_account.refresh_token_encrypted)
-                
-                # Get fetcher
-                fetcher_class = get_fetcher(platform_name)
-                fetcher = fetcher_class(access_token, refresh_token)
-                
-                # Fetch analytics (run async in sync context)
-                import asyncio
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    fetch_result = loop.run_until_complete(
-                        fetcher.fetch_video_analytics(platform_post_id)
-                    )
-                finally:
-                    loop.close()
-                
-                if fetch_result.success:
-                    # Store analytics (use platform string directly)
-                    analytics_service.store_analytics(
-                        post_id=post_uuid,
-                        platform=platform_name,
-                        platform_post_id=platform_post_id,
-                        views=fetch_result.views,
-                        likes=fetch_result.likes,
-                        comments=fetch_result.comments,
-                        shares=fetch_result.shares,
-                        saves=fetch_result.saves,
-                        watch_time_seconds=fetch_result.watch_time_seconds,
-                        avg_view_duration=fetch_result.avg_view_duration,
-                        reach=fetch_result.reach,
-                        impressions=fetch_result.impressions,
-                        click_through_rate=fetch_result.click_through_rate,
-                        follower_change=fetch_result.follower_change,
-                        raw_data=fetch_result.raw_data,
-                    )
-                    
-                    results[platform_name] = {
-                        "success": True,
-                        "views": fetch_result.views,
-                        "likes": fetch_result.likes,
-                    }
-                else:
-                    results[platform_name] = {
-                        "success": False,
-                        "error": fetch_result.error,
-                    }
-                    
-            except Exception as e:
-                logger.error(f"Failed to sync analytics for {platform_name}: {e}")
-                results[platform_name] = {"success": False, "error": str(e)}
-        
-        return {
-            "success": True,
-            "post_id": post_id,
-            "results": results,
-        }
+        except Exception as e:
+            logger.error(f"Failed to sync analytics for {platform_name}: {e}")
+            return {"success": False, "error": str(e)}
         
     except Exception as e:
         logger.exception(f"Analytics sync job failed: {e}")

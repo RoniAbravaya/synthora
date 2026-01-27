@@ -197,7 +197,7 @@ class JobScheduler:
         platform: Optional[str] = None,
     ) -> Optional[Any]:
         """
-        Enqueue an analytics sync job.
+        Enqueue an analytics sync job for a user.
         
         Args:
             user_id: User UUID
@@ -210,17 +210,75 @@ class JobScheduler:
             logger.warning("Redis not available - skipping analytics sync")
             return None
             
-        from app.workers.analytics_worker import sync_analytics
+        from app.workers.analytics_worker import sync_user_analytics_job
         
         job = self.queues["analytics"].enqueue(
-            sync_analytics,
-            user_id=str(user_id),
-            platform=platform,
+            sync_user_analytics_job,
+            str(user_id),
             job_timeout="10m",
             result_ttl=3600,
         )
         
         logger.info(f"Enqueued analytics sync job: {job.id}")
+        return job
+    
+    def enqueue_post_analytics_sync(
+        self,
+        post_id: UUID,
+        delay_minutes: int = 60,
+    ) -> Optional[Any]:
+        """
+        Enqueue an analytics sync job for a specific post.
+        
+        Args:
+            post_id: Post UUID
+            delay_minutes: Minutes to delay before syncing
+            
+        Returns:
+            RQ Job instance, or None if Redis not available
+        """
+        if not self._redis_available or "analytics" not in self.queues:
+            logger.warning("Redis not available - skipping post analytics sync")
+            return None
+            
+        from app.workers.analytics_worker import sync_post_analytics_job
+        
+        # Calculate when to run
+        scheduled_time = datetime.utcnow() + timedelta(minutes=delay_minutes)
+        
+        job = self.queues["analytics"].enqueue_at(
+            scheduled_time,
+            sync_post_analytics_job,
+            str(post_id),
+            job_timeout="5m",
+            result_ttl=3600,
+        )
+        
+        logger.info(f"Scheduled post analytics sync job: {job.id} for {scheduled_time}")
+        return job
+    
+    def enqueue_daily_analytics_sync(self) -> Optional[Any]:
+        """
+        Enqueue the daily analytics sync job.
+        
+        This should be called by a cron-like scheduler once per day.
+        
+        Returns:
+            RQ Job instance, or None if Redis not available
+        """
+        if not self._redis_available or "analytics" not in self.queues:
+            logger.warning("Redis not available - skipping daily analytics sync")
+            return None
+            
+        from app.workers.analytics_worker import daily_analytics_sync_job
+        
+        job = self.queues["analytics"].enqueue(
+            daily_analytics_sync_job,
+            job_timeout="1h",
+            result_ttl=86400,
+        )
+        
+        logger.info(f"Enqueued daily analytics sync job: {job.id}")
         return job
     
     def enqueue_scheduled_post(

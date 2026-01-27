@@ -1,48 +1,46 @@
 """
-Analytics Fetchers Package
+Analytics Fetchers Module
 
-Platform-specific analytics fetching implementations.
+Provides fetcher classes for retrieving analytics data from social media platforms.
 """
 
-from app.services.analytics_fetchers.base import BaseFetcher, FetchResult
-from app.services.analytics_fetchers.youtube import YouTubeAnalyticsFetcher
-from app.services.analytics_fetchers.tiktok import TikTokAnalyticsFetcher
-from app.services.analytics_fetchers.instagram import InstagramAnalyticsFetcher
-from app.services.analytics_fetchers.facebook import FacebookAnalyticsFetcher
+from typing import Type, Dict
 
-__all__ = [
-    "BaseFetcher",
-    "FetchResult",
-    "YouTubeAnalyticsFetcher",
-    "TikTokAnalyticsFetcher",
-    "InstagramAnalyticsFetcher",
-    "FacebookAnalyticsFetcher",
-    "get_fetcher",
-]
+from .base import BaseFetcher, FetchResult
+from .youtube import YouTubeFetcher
+
+# Registry of available fetchers
+_FETCHERS: Dict[str, Type[BaseFetcher]] = {
+    "youtube": YouTubeFetcher,
+}
 
 
-def get_fetcher(platform: str) -> type:
+def get_fetcher(platform: str) -> Type[BaseFetcher]:
     """
-    Get the appropriate fetcher class for a platform.
+    Get the fetcher class for a platform.
     
     Args:
-        platform: Platform name (youtube, tiktok, instagram, facebook)
+        platform: Platform name (e.g., 'youtube')
         
     Returns:
-        Fetcher class
+        Fetcher class for the platform
         
     Raises:
         ValueError: If platform is not supported
     """
-    fetchers = {
-        "youtube": YouTubeAnalyticsFetcher,
-        "tiktok": TikTokAnalyticsFetcher,
-        "instagram": InstagramAnalyticsFetcher,
-        "facebook": FacebookAnalyticsFetcher,
-    }
+    # Handle both string and enum
+    platform_name = platform.value if hasattr(platform, 'value') else platform
     
-    if platform.lower() not in fetchers:
-        raise ValueError(f"Unsupported platform: {platform}")
+    fetcher_class = _FETCHERS.get(platform_name.lower())
+    if not fetcher_class:
+        raise ValueError(f"No analytics fetcher for platform: {platform_name}")
     
-    return fetchers[platform.lower()]
+    return fetcher_class
 
+
+__all__ = [
+    "BaseFetcher",
+    "FetchResult",
+    "YouTubeFetcher",
+    "get_fetcher",
+]

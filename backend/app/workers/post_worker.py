@@ -108,7 +108,9 @@ def publish_post_now(post_id: str) -> Dict[str, Any]:
 
 async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
     """
-    Internal function to publish a post to all platforms.
+    Internal function to publish a post to its target platform.
+    
+    Each post is linked to one platform and one social account.
     
     Args:
         db: Database session
@@ -117,116 +119,99 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
     Returns:
         Dictionary with results
     """
+    from app.workers.analytics_worker import queue_analytics_sync
+    
     post_service = PostService(db)
     oauth_service = SocialOAuthService(db)
     
     # Mark post as publishing
-    post_service.start_publishing(post)
+    post.status = "publishing"
+    db.commit()
     
     # Get video
     video = db.query(Video).filter(Video.id == post.video_id).first()
     if not video:
-        post_service.update_platform_status(
-            post, 
-            post.platforms[0] if post.platforms else "youtube",
-            "failed",
-            error="Video not found"
-        )
+        post.mark_failed("Video not found")
+        db.commit()
         return {"success": False, "error": "Video not found"}
     
-    results = {}
+    # Get the social account linked to this post
+    account = db.query(SocialAccount).filter(
+        SocialAccount.id == post.social_account_id
+    ).first()
     
-    # Publish to each platform
-    for platform_str in post.platforms:
-        # Update platform status to publishing
-        post_service.update_platform_status(post, platform_str, "publishing")
-        
-        # Get social account for this platform (platform is stored as string in DB)
-        accounts = oauth_service.get_user_accounts(post.user_id, platform_str)
-        
-        if not accounts:
-            post_service.update_platform_status(
-                post, platform_str, "failed",
-                error=f"No {platform_str} account connected"
-            )
-            results[platform_str] = {
-                "success": False,
-                "error": f"No {platform_str} account connected"
-            }
-            continue
-        
-        account = accounts[0]  # Use first account
-        
-        # Get access token
-        access_token = oauth_service.get_access_token(account)
-        
-        if not access_token:
-            post_service.update_platform_status(
-                post, platform_str, "failed",
-                error="Failed to get access token"
-            )
-            results[platform_str] = {
-                "success": False,
-                "error": "Failed to get access token"
-            }
-            continue
-        
-        # Get platform-specific overrides
-        platform_overrides = (post.platform_overrides or {}).get(platform_str, {})
-        
-        # Create publish request
-        request = PublishRequest(
-            video_path=video.video_url or "",  # Local path or URL
-            video_url=video.video_url,  # Public URL for Instagram
-            title=post.title or video.title or "Untitled",
-            description=post.description or "",
-            hashtags=post.hashtags or [],
-            access_token=access_token,
-            platform_overrides=platform_overrides,
-        )
-        
-        # Get publisher and publish (convert string to enum for publisher)
-        try:
-            platform_enum = SocialPlatform(platform_str)
-            publisher = get_publisher(platform_enum)
-            result = await publisher.publish(request)
-            
-            if result.success:
-                post_service.update_platform_status(
-                    post, platform_str, "published",
-                    post_id=result.post_id,
-                    post_url=result.post_url,
-                )
-            else:
-                post_service.update_platform_status(
-                    post, platform_str, "failed",
-                    error=result.error,
-                )
-            
-            results[platform_str] = result.to_dict()
-            
-        except Exception as e:
-            logger.exception(f"Error publishing to {platform_str}")
-            post_service.update_platform_status(
-                post, platform_str, "failed",
-                error=str(e),
-            )
-            results[platform_str] = {
-                "success": False,
-                "error": str(e)
-            }
+    if not account:
+        post.mark_failed("Social account not found")
+        db.commit()
+        return {"success": False, "error": "Social account not found"}
     
-    # Determine overall success
-    successes = sum(1 for r in results.values() if r.get("success"))
-    total = len(results)
+    # Get access token
+    access_token = oauth_service.get_access_token(account)
     
-    return {
-        "success": successes > 0,
-        "post_id": str(post.id),
-        "platforms_succeeded": successes,
-        "platforms_total": total,
-        "results": results,
-    }
+    if not access_token:
+        post.mark_failed("Failed to get access token")
+        db.commit()
+        return {"success": False, "error": "Failed to get access token"}
+    
+    # Get platform-specific overrides from platform_config
+    platform_overrides = post.platform_config or {}
+    
+    # Create publish request
+    request = PublishRequest(
+        video_path=video.video_url or "",  # Local path or URL
+        video_url=video.video_url,  # Public URL for Instagram
+        title=video.title or "Untitled",
+        description=post.caption or "",
+        hashtags=post.hashtags or [],
+        access_token=access_token,
+        platform_overrides=platform_overrides,
+    )
+    
+    # Get publisher and publish
+    try:
+        platform_enum = SocialPlatform(post.platform)
+        publisher = get_publisher(platform_enum)
+        result = await publisher.publish(request)
+        
+        if result.success:
+            post.mark_published(result.post_id, result.post_url)
+            db.commit()
+            
+            # Schedule analytics sync after 1 hour (to allow metrics to accumulate)
+            # This is queued with a delay in production
+            try:
+                queue_analytics_sync(post.id)
+                logger.info(f"Queued analytics sync for post {post.id}")
+            except Exception as e:
+                logger.warning(f"Failed to queue analytics sync: {e}")
+            
+            return {
+                "success": True,
+                "post_id": str(post.id),
+                "platform": post.platform,
+                "platform_post_id": result.post_id,
+                "post_url": result.post_url,
+            }
+        else:
+            post.mark_failed(result.error)
+            db.commit()
+            return {
+                "success": False,
+                "post_id": str(post.id),
+                "platform": post.platform,
+                "error": result.error,
+            }
+            
+    except Exception as e:
+        logger.exception(f"Error publishing to {post.platform}")
+        post.mark_failed(str(e))
+        db.commit()
+        return {
+            "success": False,
+            "post_id": str(post.id),
+            "platform": post.platform,
+            "error": str(e),
+        }
 
 
 def process_scheduled_posts() -> Dict[str, Any]:

@@ -243,17 +243,22 @@ class AnalyticsService:
         Returns:
             List of top performing posts with metrics
         """
-        # Get user's posts
-        posts = self.db.query(Post).filter(
+        # Build posts query
+        posts_query = self.db.query(Post).filter(
             and_(
                 Post.user_id == user_id,
                 Post.status == "published",
             )
-        ).all()
+        )
         
-        post_ids = [p.id for p in posts]
+        # Filter by platform if provided
+        if platform:
+            platform_value = platform.value if hasattr(platform, 'value') else platform
+            posts_query = posts_query.filter(Post.platform == platform_value)
         
-        if not post_ids:
+        posts = posts_query.all()
+        
+        if not posts:
             return []
         
         # Get latest analytics for each post
@@ -262,34 +267,32 @@ class AnalyticsService:
             # Get video info
             video = self.db.query(Video).filter(Video.id == post.video_id).first()
             
-            # Get analytics
-            query = self.db.query(Analytics).filter(Analytics.post_id == post.id)
-            if platform:
-                query = query.filter(Analytics.platform == platform)
-            
-            analytics_list = query.order_by(Analytics.fetched_at.desc()).all()
+            # Get analytics for this post
+            analytics_list = self.db.query(Analytics).filter(
+                Analytics.post_id == post.id
+            ).order_by(Analytics.fetched_at.desc()).all()
             
             if not analytics_list:
                 continue
             
-            # Aggregate across platforms
-            total_views = sum(a.views for a in analytics_list)
-            total_likes = sum(a.likes for a in analytics_list)
-            total_comments = sum(a.comments for a in analytics_list)
-            total_shares = sum(a.shares for a in analytics_list)
+            # Get the latest analytics
+            latest = analytics_list[0]
+            
+            # Use video title if available, else use caption preview
+            title = video.title if video else (post.caption[:50] if post.caption else "Untitled")
             
             results.append({
                 "post_id": str(post.id),
                 "video_id": str(post.video_id),
-                "title": post.title or (video.title if video else "Untitled"),
+                "title": title,
                 "thumbnail_url": video.thumbnail_url if video else None,
-                "platforms": post.platforms,
+                "platforms": [post.platform],  # Single platform per post
                 "published_at": post.published_at.isoformat() if post.published_at else None,
                 "metrics": {
-                    "views": total_views,
-                    "likes": total_likes,
-                    "comments": total_comments,
-                    "shares": total_shares,
+                    "views": latest.views,
+                    "likes": latest.likes,
+                    "comments": latest.comments,
+                    "shares": latest.shares,
                 },
             })
         
@@ -381,19 +384,18 @@ class AnalyticsService:
     def store_analytics(
         self,
         post_id: UUID,
-        platform: SocialPlatform,
-        platform_post_id: str,
+        user_id: UUID,
+        platform: str,
         views: int = 0,
         likes: int = 0,
         comments: int = 0,
         shares: int = 0,
         saves: int = 0,
         watch_time_seconds: int = 0,
-        avg_view_duration: float = 0.0,
+        avg_watch_percentage: float = 0.0,
         reach: int = 0,
         impressions: int = 0,
-        click_through_rate: float = 0.0,
-        follower_change: int = 0,
+        clicks: int = 0,
         raw_data: Optional[Dict[str, Any]] = None,
     ) -> Analytics:
         """
@@ -401,24 +403,26 @@ class AnalyticsService:
         
         Args:
             post_id: Post UUID
-            platform: Platform
-            platform_post_id: Platform-specific post ID
+            user_id: User UUID
+            platform: Platform name (string)
             views: View count
             likes: Like count
             comments: Comment count
             shares: Share count
             saves: Save/bookmark count
             watch_time_seconds: Total watch time
-            avg_view_duration: Average view duration
+            avg_watch_percentage: Average percentage of video watched
             reach: Reach count
             impressions: Impression count
-            click_through_rate: CTR percentage
-            follower_change: Follower change
+            clicks: Click count
             raw_data: Raw API response
             
         Returns:
             Created Analytics instance
         """
+        # Handle both enum and string input for platform
+        platform_value = platform.value if hasattr(platform, 'value') else platform
+        
         # Calculate engagement rate
         engagement_rate = 0.0
         if views > 0:
@@ -426,20 +430,19 @@ class AnalyticsService:
         
         analytics = Analytics(
             post_id=post_id,
-            platform=platform,
-            platform_post_id=platform_post_id,
+            user_id=user_id,
+            platform=platform_value,
             views=views,
             likes=likes,
             comments=comments,
             shares=shares,
             saves=saves,
             watch_time_seconds=watch_time_seconds,
-            avg_view_duration=avg_view_duration,
+            avg_watch_percentage=avg_watch_percentage,
+            engagement_rate=round(engagement_rate, 2),
             reach=reach,
             impressions=impressions,
-            engagement_rate=round(engagement_rate, 2),
-            click_through_rate=click_through_rate,
-            follower_change=follower_change,
+            clicks=clicks,
             raw_data=raw_data,
             fetched_at=datetime.utcnow(),
         )
@@ -448,7 +451,7 @@ class AnalyticsService:
         self.db.commit()
         self.db.refresh(analytics)
         
-        logger.info(f"Stored analytics for post {post_id} on {platform.value}")
+        logger.info(f"Stored analytics for post {post_id} on {platform_value}")
         return analytics
     
     def update_post_analytics(
