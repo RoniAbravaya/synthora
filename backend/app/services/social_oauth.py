@@ -7,7 +7,7 @@ Manages OAuth flows and token storage for social media platforms.
 import logging
 import secrets
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -70,7 +70,7 @@ class SocialOAuthService:
             "user_id": str(user_id),
             "platform": platform.value,
             "redirect_uri": redirect_uri,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         
         logger.info(f"Generated OAuth state for user {user_id}, platform {platform.value}")
@@ -94,7 +94,10 @@ class SocialOAuthService:
         
         # Check if state is expired (15 minutes)
         created_at = datetime.fromisoformat(state_data["created_at"])
-        if datetime.utcnow() - created_at > timedelta(minutes=15):
+        # Handle naive datetime (assume UTC if no timezone)
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - created_at > timedelta(minutes=15):
             logger.warning(f"Expired OAuth state: {state}")
             return None
         
@@ -216,7 +219,7 @@ class SocialOAuthService:
             account.extra_metadata = metadata or {}
             account.status = "connected"
             account.is_active = True
-            account.last_used_at = datetime.utcnow()
+            account.last_used_at = datetime.now(timezone.utc)
             
             logger.info(f"Updated social account: {platform_str}/{username}")
         else:
@@ -287,7 +290,13 @@ class SocialOAuthService:
         if not account.token_expires_at:
             return False
         
-        return datetime.utcnow() + self.TOKEN_REFRESH_BUFFER >= account.token_expires_at
+        # Handle both naive and aware datetimes for token_expires_at
+        now = datetime.now(timezone.utc)
+        expires_at = account.token_expires_at
+        # If token_expires_at is naive, assume it's UTC
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return now + self.TOKEN_REFRESH_BUFFER >= expires_at
     
     def _refresh_token(self, account: SocialAccount) -> bool:
         """
@@ -348,7 +357,7 @@ class SocialOAuthService:
             if new_tokens.get("expires_at"):
                 account.token_expires_at = new_tokens["expires_at"]
             elif new_tokens.get("expires_in"):
-                account.token_expires_at = datetime.utcnow() + timedelta(
+                account.token_expires_at = datetime.now(timezone.utc) + timedelta(
                     seconds=new_tokens["expires_in"]
                 )
             
@@ -379,7 +388,7 @@ class SocialOAuthService:
         account.status = "error"
         account.extra_metadata = account.extra_metadata or {}
         account.extra_metadata["last_error"] = error_message
-        account.extra_metadata["error_at"] = datetime.utcnow().isoformat()
+        account.extra_metadata["error_at"] = datetime.now(timezone.utc).isoformat()
         
         self.db.commit()
         
