@@ -39,6 +39,8 @@ def sync_post_analytics_job(post_id: str) -> dict:
     Returns:
         Dictionary with sync results
     """
+    logger.info(f"=== ANALYTICS SYNC JOB STARTED for post {post_id} ===")
+    
     job = get_current_job()
     db = SessionLocal()
     
@@ -49,6 +51,7 @@ def sync_post_analytics_job(post_id: str) -> dict:
         post = db.query(Post).filter(Post.id == post_uuid).first()
         
         if not post:
+            logger.error(f"Analytics sync: Post {post_id} not found")
             return {"success": False, "error": "Post not found"}
         
         # Use string comparison
@@ -72,7 +75,11 @@ def sync_post_analytics_job(post_id: str) -> dict:
             ).first()
             
             if not social_account:
+                logger.error(f"Analytics sync: No connected account found for post {post_id}")
                 return {"success": False, "error": "No connected account found"}
+            
+            logger.info(f"Analytics sync: Found social account {social_account.id} for {platform_name}")
+            logger.info(f"Analytics sync: Platform post ID = {platform_post_id}")
             
             # Decrypt access token
             access_token = decrypt_value(social_account.access_token_encrypted)
@@ -80,9 +87,13 @@ def sync_post_analytics_job(post_id: str) -> dict:
             if social_account.refresh_token_encrypted:
                 refresh_token = decrypt_value(social_account.refresh_token_encrypted)
             
+            logger.info(f"Analytics sync: Access token decrypted (length={len(access_token) if access_token else 0})")
+            
             # Get fetcher
             fetcher_class = get_fetcher(platform_name)
             fetcher = fetcher_class(access_token, refresh_token)
+            
+            logger.info(f"Analytics sync: Calling {platform_name} API to fetch analytics...")
             
             # Fetch analytics (run async in sync context)
             import asyncio
@@ -95,13 +106,14 @@ def sync_post_analytics_job(post_id: str) -> dict:
             finally:
                 loop.close()
             
-            if fetch_result.success:
-                # Log information about the fetched data
-                logger.info(
-                    f"Analytics fetch successful for post {post_id}: "
-                    f"views={fetch_result.views}, likes={fetch_result.likes}, "
-                    f"comments={fetch_result.comments}, shares={fetch_result.shares}"
-                )
+                if fetch_result.success:
+                    # Log information about the fetched data
+                    logger.info(f"=== ANALYTICS FETCH SUCCESSFUL for post {post_id} ===")
+                    logger.info(
+                        f"Analytics fetch successful for post {post_id}: "
+                        f"views={fetch_result.views}, likes={fetch_result.likes}, "
+                        f"comments={fetch_result.comments}, shares={fetch_result.shares}"
+                    )
                 
                 # Warn if all metrics are 0 (common for newly published posts)
                 if (fetch_result.views == 0 and fetch_result.likes == 0 and 
@@ -356,6 +368,8 @@ def queue_analytics_sync(
     Returns:
         Job ID if queued successfully
     """
+    logger.info(f"=== QUEUEING ANALYTICS SYNC for post {post_id}, delay={delay_seconds}s ===")
+    
     try:
         from redis import Redis
         from rq import Queue
@@ -366,8 +380,11 @@ def queue_analytics_sync(
         if not settings.REDIS_URL:
             logger.warning("REDIS_URL not configured, skipping analytics queue")
             return None
+        
+        logger.info(f"Connecting to Redis for analytics queue...")
         redis_conn = Redis.from_url(settings.REDIS_URL)
         queue = Queue(queue_name, connection=redis_conn)
+        logger.info(f"Redis connection established, queue={queue_name}")
         
         if delay_seconds > 0:
             # Schedule with delay
