@@ -226,10 +226,12 @@ def require_role(*allowed_roles: UserRole) -> Callable:
         ```
     """
     async def role_checker(user: User = Depends(get_current_active_user)) -> User:
-        if user.role not in allowed_roles:
-            role_names = [r.value for r in allowed_roles]
+        # Handle both string and enum role values
+        user_role = user.role if isinstance(user.role, str) else user.role.value
+        allowed_role_values = [r.value for r in allowed_roles]
+        if user_role not in allowed_role_values:
             raise AuthorizationError(
-                f"This action requires one of these roles: {', '.join(role_names)}"
+                f"This action requires one of these roles: {', '.join(allowed_role_values)}"
             )
         return user
     
@@ -251,7 +253,9 @@ def require_admin(user: User = Depends(get_current_active_user)) -> User:
     Raises:
         AuthorizationError: If user is not an admin
     """
-    if user.role != UserRole.ADMIN:
+    # Handle both string and enum role values
+    user_role = user.role if isinstance(user.role, str) else user.role.value
+    if user_role != UserRole.ADMIN.value:
         raise AuthorizationError("Admin access required")
     return user
 
