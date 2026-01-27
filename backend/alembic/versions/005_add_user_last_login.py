@@ -1,7 +1,7 @@
 """Add last_login column to users table
 
-Revision ID: 005
-Revises: 004
+Revision ID: 005_add_user_last_login
+Revises: 004_fix_ai_suggestions
 Create Date: 2026-01-27
 
 This migration adds a last_login timestamp column to the users table
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic
-revision = '005'
-down_revision = '004'
+revision = '005_add_user_last_login'
+down_revision = '004_fix_ai_suggestions'
 branch_labels = None
 depends_on = None
 
