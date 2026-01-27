@@ -178,6 +178,9 @@ class UserService:
             if firebase_user.picture and user.photo_url != firebase_user.picture:
                 user.photo_url = firebase_user.picture
             
+            # Update last login timestamp
+            user.last_login = datetime.utcnow()
+            
             self.db.commit()
             self.db.refresh(user)
             
@@ -192,6 +195,11 @@ class UserService:
             logger.info("First user - assigning admin role")
         
         user = self.create_user(firebase_user, role=role)
+        # Set first login time
+        user.last_login = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(user)
+        
         return user, True
     
     def update_user(

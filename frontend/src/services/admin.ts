@@ -177,14 +177,22 @@ export const adminService = {
 
   /**
    * Grant premium to user.
+   * @param userId - User ID to grant premium to
+   * @param months - Number of months (converted to days)
    */
   grantPremium: (userId: string, months?: number) =>
-    apiClient.post<{ message: string }>(`/subscriptions/admin/grant/${userId}`, { months }),
+    apiClient.post<{ message: string }>("/subscriptions/admin/grant-premium", { 
+      user_id: userId, 
+      days: (months || 1) * 30,
+      reason: "Admin grant",
+    }),
 
   /**
    * Revoke premium from user.
    */
   revokePremium: (userId: string) =>
-    apiClient.post<{ message: string }>(`/subscriptions/admin/revoke/${userId}`),
+    apiClient.post<{ message: string }>("/subscriptions/admin/revoke-premium", { 
+      user_id: userId 
+    }),
 }
 

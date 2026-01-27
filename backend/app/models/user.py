@@ -143,6 +143,11 @@ class User(Base):
         nullable=True,
         doc="Last update timestamp"
     )
+    last_login = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Last login timestamp"
+    )
     
     # Relationships
     subscription = relationship(
