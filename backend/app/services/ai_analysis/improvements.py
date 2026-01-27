@@ -148,6 +148,7 @@ class ImprovementAnalyzer:
             improvements.extend(hashtag_issues)
         
         # Use AI for deeper analysis if available
+        settings = get_settings()
         if settings.OPENAI_API_KEY:
             ai_suggestions = await self._get_ai_improvements(post, performance)
             if ai_suggestions:
@@ -291,6 +292,7 @@ class ImprovementAnalyzer:
         performance: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """Get AI-powered improvement suggestions."""
+        settings = get_settings()
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(

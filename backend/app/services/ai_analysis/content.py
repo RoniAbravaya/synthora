@@ -225,6 +225,7 @@ class ContentAnalyzer:
         count: int,
     ) -> List[Dict[str, Any]]:
         """Call OpenAI to generate content ideas."""
+        settings = get_settings()
         if not settings.OPENAI_API_KEY:
             logger.warning("OpenAI API key not configured")
             return self._generate_fallback_ideas(count)

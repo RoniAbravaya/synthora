@@ -199,7 +199,7 @@ async def get_top_performing(
             TopPerformingItem(
                 post_id=item["post_id"],
                 video_id=item["video_id"],
-                title=item["title"],
+                title=item.get("title") or "Untitled",
                 thumbnail_url=item.get("thumbnail_url"),
                 platforms=item.get("platforms", []),
                 published_at=item.get("published_at"),

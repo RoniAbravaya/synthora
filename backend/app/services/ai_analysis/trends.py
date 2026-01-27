@@ -81,6 +81,7 @@ class TrendAnalyzer:
         category: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Use AI to generate plausible trending topics."""
+        settings = get_settings()
         if not settings.OPENAI_API_KEY:
             return self._get_fallback_trends(category)
         

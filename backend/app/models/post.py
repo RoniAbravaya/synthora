@@ -188,6 +188,39 @@ class Post(Base, UUIDMixin, TimestampMixin):
         return self.platform_config
     
     @property
+    def title(self) -> Optional[str]:
+        """
+        Get post title derived from caption.
+        
+        Returns the first line of the caption (up to 100 chars) or None.
+        This provides backwards compatibility where 'title' is expected.
+        """
+        if not self.caption:
+            return None
+        # Get first line of caption as title
+        first_line = self.caption.split('\n')[0].strip()
+        # Limit to 100 characters
+        if len(first_line) > 100:
+            return first_line[:97] + "..."
+        return first_line if first_line else None
+    
+    @property
+    def description(self) -> Optional[str]:
+        """
+        Alias for caption for backwards compatibility.
+        """
+        return self.caption
+    
+    @property
+    def platforms(self) -> List[str]:
+        """
+        Get list of platforms (returns single-item list with this post's platform).
+        
+        For backwards compatibility where posts were expected to have multiple platforms.
+        """
+        return [self.platform] if self.platform else []
+    
+    @property
     def error_log(self) -> Optional[dict]:
         """Get error info as dict."""
         if self.error_message:

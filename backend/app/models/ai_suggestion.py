@@ -16,25 +16,30 @@ from app.core.database import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.user import User
+    from app.models.video import Video
+    from app.models.post import Post
+    from app.models.template import Template
 
 
 class SuggestionType(str, enum.Enum):
     """
     Types of AI suggestions.
     
-    - posting_time: Optimal posting time recommendations
+    - optimal_time: Optimal posting time recommendations
     - content: Content topic/style recommendations
     - template: Template usage recommendations
     - trend: Trending topic alerts
     - prediction: Performance predictions
     - improvement: Tips for improving content
     """
-    POSTING_TIME = "posting_time"
+    OPTIMAL_TIME = "optimal_time"
     CONTENT = "content"
     TEMPLATE = "template"
     TREND = "trend"
     PREDICTION = "prediction"
     IMPROVEMENT = "improvement"
+    # Keep old values for backwards compatibility
+    POSTING_TIME = "posting_time"
 
 
 class SuggestionPriority(str, enum.Enum):
@@ -53,21 +58,34 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
     Attributes:
         id: Unique identifier (UUID)
         user_id: Foreign key to user
-        type: Type of suggestion
+        suggestion_type: Type of suggestion
         title: Short title for the suggestion
-        suggestion: Detailed suggestion data (JSON)
-        confidence_score: AI confidence in this suggestion (0-1)
+        description: Detailed description of the suggestion
+        priority: Priority level (high/medium/low)
+        action_type: Type of action user can take
+        action_data: Data needed to perform the action (JSON)
         is_read: Whether user has read this suggestion
         is_dismissed: Whether user has dismissed this suggestion
+        is_acted: Whether user has acted on this suggestion
+        read_at: When the suggestion was read
+        dismissed_at: When the suggestion was dismissed
+        acted_at: When the user acted on this suggestion
         expires_at: When this suggestion is no longer relevant
+        related_video_id: Related video if applicable
+        related_post_id: Related post if applicable
+        related_template_id: Related template if applicable
+        metadata: Additional metadata (JSON)
         
     Relationships:
         user: The user this suggestion is for
+        related_video: Related video
+        related_post: Related post
+        related_template: Related template
     """
     
     __tablename__ = "ai_suggestions"
     
-    # Foreign Key
+    # Foreign Key - User
     user_id = Column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -77,7 +95,7 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
     )
     
     # Suggestion Info
-    type = Column(
+    suggestion_type = Column(
         Enum(SuggestionType),
         nullable=False,
         index=True,
@@ -88,21 +106,33 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         doc="Short title for the suggestion"
     )
-    suggestion = Column(
+    description = Column(
+        Text,
+        nullable=True,
+        doc="Detailed description of the suggestion"
+    )
+    priority = Column(
+        Enum(SuggestionPriority),
+        default=SuggestionPriority.MEDIUM,
+        nullable=False,
+        index=True,
+        doc="Priority level"
+    )
+    
+    # Action info
+    action_type = Column(
+        String(50),
+        nullable=True,
+        doc="Type of action user can take"
+    )
+    action_data = Column(
         JSONB,
-        nullable=False,
-        doc="Detailed suggestion data"
+        nullable=True,
+        default=dict,
+        doc="Data needed to perform the action"
     )
     
-    # Confidence
-    confidence_score = Column(
-        Float,
-        default=0.5,
-        nullable=False,
-        doc="AI confidence in this suggestion (0-1)"
-    )
-    
-    # Status
+    # Status flags
     is_read = Column(
         Boolean,
         default=False,
@@ -116,19 +146,86 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         doc="Whether user has dismissed this suggestion"
     )
+    is_acted = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+        doc="Whether user has acted on this suggestion"
+    )
     
-    # Expiry
+    # Status timestamps
+    read_at = Column(
+        DateTime,
+        nullable=True,
+        doc="When the suggestion was read"
+    )
+    dismissed_at = Column(
+        DateTime,
+        nullable=True,
+        doc="When the suggestion was dismissed"
+    )
+    acted_at = Column(
+        DateTime,
+        nullable=True,
+        doc="When the user acted on this suggestion"
+    )
     expires_at = Column(
         DateTime,
         nullable=True,
         doc="When this suggestion is no longer relevant"
     )
     
-    # Relationship
+    # Related entities
+    related_video_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("videos.id", ondelete="SET NULL"),
+        nullable=True,
+        doc="Related video if applicable"
+    )
+    related_post_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("posts.id", ondelete="SET NULL"),
+        nullable=True,
+        doc="Related post if applicable"
+    )
+    related_template_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("templates.id", ondelete="SET NULL"),
+        nullable=True,
+        doc="Related template if applicable"
+    )
+    
+    # Additional metadata
+    metadata = Column(
+        JSONB,
+        nullable=True,
+        default=dict,
+        doc="Additional metadata"
+    )
+    
+    # Legacy field for backwards compatibility (maps to description)
+    suggestion = Column(
+        JSONB,
+        nullable=True,
+        doc="Legacy: Detailed suggestion data (use description instead)"
+    )
+    
+    # Legacy field for backwards compatibility
+    confidence_score = Column(
+        Float,
+        default=0.5,
+        nullable=True,
+        doc="Legacy: AI confidence in this suggestion (0-1)"
+    )
+    
+    # Relationships
     user = relationship("User", back_populates="suggestions")
+    related_video = relationship("Video", foreign_keys=[related_video_id])
+    related_post = relationship("Post", foreign_keys=[related_post_id])
+    related_template = relationship("Template", foreign_keys=[related_template_id])
     
     def __repr__(self) -> str:
-        return f"<AISuggestion(id={self.id}, type={self.type}, title={self.title})>"
+        return f"<AISuggestion(id={self.id}, type={self.suggestion_type}, title={self.title})>"
     
     @property
     def is_expired(self) -> bool:
@@ -145,10 +242,17 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
     def mark_read(self) -> None:
         """Mark suggestion as read."""
         self.is_read = True
+        self.read_at = datetime.utcnow()
     
     def dismiss(self) -> None:
         """Dismiss the suggestion."""
         self.is_dismissed = True
+        self.dismissed_at = datetime.utcnow()
+    
+    def mark_acted(self) -> None:
+        """Mark that user acted on this suggestion."""
+        self.is_acted = True
+        self.acted_at = datetime.utcnow()
     
     @staticmethod
     def create_posting_time_suggestion(
@@ -171,11 +275,15 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
         """
         return AISuggestion(
             user_id=user_id,
-            type=SuggestionType.POSTING_TIME,
+            suggestion_type=SuggestionType.OPTIMAL_TIME,
             title="Optimal Posting Times",
-            suggestion={
+            description=reasoning,
+            priority=SuggestionPriority.MEDIUM,
+            action_type="schedule_post",
+            action_data={
                 "recommended_times": recommended_times,
-                "reasoning": reasoning,
+            },
+            metadata={
                 "based_on": "historical_performance"
             },
             confidence_score=confidence
@@ -204,12 +312,16 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
         """
         return AISuggestion(
             user_id=user_id,
-            type=SuggestionType.CONTENT,
+            suggestion_type=SuggestionType.CONTENT,
             title=f"Content Idea: {topic}",
-            suggestion={
+            description=reasoning,
+            priority=SuggestionPriority.MEDIUM,
+            action_type="create_video",
+            action_data={
                 "topic": topic,
-                "reasoning": reasoning,
                 "related_trends": related_trends or [],
+            },
+            metadata={
                 "based_on": "performance_analysis"
             },
             confidence_score=confidence
@@ -236,13 +348,19 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
         Returns:
             New AISuggestion instance
         """
+        priority = SuggestionPriority.HIGH if relevance_score > 0.8 else SuggestionPriority.MEDIUM
+        
         return AISuggestion(
             user_id=user_id,
-            type=SuggestionType.TREND,
+            suggestion_type=SuggestionType.TREND,
             title=f"Trending: {trend_name}",
-            suggestion={
+            description=description,
+            priority=priority,
+            action_type="create_video",
+            action_data={
                 "trend_name": trend_name,
-                "description": description,
+            },
+            metadata={
                 "relevance_score": relevance_score
             },
             confidence_score=relevance_score,
@@ -272,12 +390,16 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
         """
         return AISuggestion(
             user_id=user_id,
-            type=SuggestionType.IMPROVEMENT,
+            suggestion_type=SuggestionType.IMPROVEMENT,
             title=f"Improve Your {area.title()}",
-            suggestion={
+            description=tip,
+            priority=SuggestionPriority.MEDIUM,
+            action_type="improve_content",
+            action_data={
                 "area": area,
-                "tip": tip,
                 "examples": examples or [],
+            },
+            metadata={
                 "based_on": "content_analysis"
             },
             confidence_score=confidence

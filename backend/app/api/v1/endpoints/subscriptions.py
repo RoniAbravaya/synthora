@@ -55,6 +55,7 @@ async def get_available_plans():
     
     Returns pricing and feature information for all plans.
     """
+    settings = get_settings()
     plans = [
         PlanInfo(
             id="free",
@@ -180,6 +181,8 @@ async def create_checkout_session(
     """
     Create a Stripe Checkout session for subscription.
     """
+    settings = get_settings()
+    
     # Validate plan
     try:
         plan = SubscriptionPlan(request.plan)
@@ -236,6 +239,7 @@ async def create_portal_session(
     
     Allows users to manage their subscription, update payment methods, etc.
     """
+    settings = get_settings()
     service = StripeService(db)
     
     # Set default return URL

@@ -411,7 +411,7 @@ class SuggestionsService:
             suggestion_type=SuggestionType.IMPROVEMENT,
             title=tip_title,
             description=tip_description,
-            priority=priority_map.get(impact_level.MEDIUM),
+            priority=priority_map.get(impact_level, SuggestionPriority.MEDIUM),
             action_type="improve_content",
             action_data={
                 "category": tip_category,
