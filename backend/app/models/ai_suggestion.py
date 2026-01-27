@@ -196,7 +196,7 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
     )
     
     # Additional metadata
-    metadata = Column(
+    extra_data = Column(
         JSONB,
         nullable=True,
         default=dict,
@@ -283,7 +283,7 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
             action_data={
                 "recommended_times": recommended_times,
             },
-            metadata={
+            extra_data={
                 "based_on": "historical_performance"
             },
             confidence_score=confidence
@@ -321,7 +321,7 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
                 "topic": topic,
                 "related_trends": related_trends or [],
             },
-            metadata={
+            extra_data={
                 "based_on": "performance_analysis"
             },
             confidence_score=confidence
@@ -360,7 +360,7 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
             action_data={
                 "trend_name": trend_name,
             },
-            metadata={
+            extra_data={
                 "relevance_score": relevance_score
             },
             confidence_score=relevance_score,
@@ -399,7 +399,7 @@ class AISuggestion(Base, UUIDMixin, TimestampMixin):
                 "area": area,
                 "examples": examples or [],
             },
-            metadata={
+            extra_data={
                 "based_on": "content_analysis"
             },
             confidence_score=confidence

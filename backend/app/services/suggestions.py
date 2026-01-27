@@ -171,7 +171,7 @@ class SuggestionsService:
             related_post_id=related_post_id,
             related_template_id=related_template_id,
             expires_at=expires_at,
-            metadata=metadata or {},
+            extra_data=metadata or {},
         )
         
         self.db.add(suggestion)

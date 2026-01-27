@@ -153,7 +153,7 @@ async def get_suggestion(
         related_video_id=suggestion.related_video_id,
         related_post_id=suggestion.related_post_id,
         related_template_id=suggestion.related_template_id,
-        metadata=suggestion.metadata or {},
+        metadata=suggestion.extra_data or {},
         created_at=suggestion.created_at,
         updated_at=suggestion.updated_at,
     )
@@ -197,7 +197,7 @@ async def mark_suggestion_read(
         related_video_id=suggestion.related_video_id,
         related_post_id=suggestion.related_post_id,
         related_template_id=suggestion.related_template_id,
-        metadata=suggestion.metadata or {},
+        metadata=suggestion.extra_data or {},
         created_at=suggestion.created_at,
         updated_at=suggestion.updated_at,
     )
@@ -249,7 +249,7 @@ async def dismiss_suggestion(
         related_video_id=suggestion.related_video_id,
         related_post_id=suggestion.related_post_id,
         related_template_id=suggestion.related_template_id,
-        metadata=suggestion.metadata or {},
+        metadata=suggestion.extra_data or {},
         created_at=suggestion.created_at,
         updated_at=suggestion.updated_at,
     )
@@ -289,7 +289,7 @@ async def mark_suggestion_acted(
         related_video_id=suggestion.related_video_id,
         related_post_id=suggestion.related_post_id,
         related_template_id=suggestion.related_template_id,
-        metadata=suggestion.metadata or {},
+        metadata=suggestion.extra_data or {},
         created_at=suggestion.created_at,
         updated_at=suggestion.updated_at,
     )
