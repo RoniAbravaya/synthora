@@ -201,36 +201,59 @@ function PlatformCard({ stats }: PlatformCardProps) {
 // Main Page Component
 // =============================================================================
 
+// Helper to convert period string to days number
+function periodToDays(period: string): number {
+  switch (period) {
+    case "7d": return 7
+    case "30d": return 30
+    case "90d": return 90
+    case "1y": return 365
+    default: return 30
+  }
+}
+
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState("7d")
   const [platform, setPlatform] = useState("all")
 
+  const days = periodToDays(period)
+
   // Fetch analytics overview
   const { data: overviewData, isLoading: overviewLoading } = useQuery({
-    queryKey: ["analytics", "overview", period],
-    queryFn: () => analyticsService.getOverview({ period }),
+    queryKey: ["analytics", "overview", days],
+    queryFn: () => analyticsService.getOverview(days),
   })
 
-  // Fetch platform stats
+  // Fetch platform comparison
   const { data: platformData, isLoading: platformLoading } = useQuery({
-    queryKey: ["analytics", "platforms", period],
-    queryFn: () => analyticsService.getPlatformStats({ period }),
+    queryKey: ["analytics", "platforms", days],
+    queryFn: () => analyticsService.getPlatformComparison(days),
   })
 
-  const overview: AnalyticsOverview = overviewData || {
-    total_views: 0,
-    total_likes: 0,
-    total_comments: 0,
-    total_shares: 0,
-    total_posts: 0,
-    avg_engagement_rate: 0,
-    views_change: 0,
+  // Map API response to expected structure with safe defaults
+  const overview: AnalyticsOverview = {
+    total_views: overviewData?.summary?.views ?? 0,
+    total_likes: overviewData?.summary?.likes ?? 0,
+    total_comments: overviewData?.summary?.comments ?? 0,
+    total_shares: overviewData?.summary?.shares ?? 0,
+    total_posts: overviewData?.total_posts ?? 0,
+    avg_engagement_rate: overviewData?.summary?.engagement_rate ?? 0,
+    views_change: 0, // API doesn't provide change data yet
     likes_change: 0,
     comments_change: 0,
     shares_change: 0,
   }
 
-  const platformStats: PlatformStats[] = platformData?.platforms || []
+  // Map platform data with safe defaults
+  const platformStats: PlatformStats[] = (platformData?.platforms || []).map((p: any) => ({
+    platform: p.platform ?? "unknown",
+    views: p.views ?? 0,
+    likes: p.likes ?? 0,
+    comments: p.comments ?? 0,
+    shares: p.shares ?? 0,
+    posts: p.posts ?? 0,
+    engagement_rate: p.engagement_rate ?? 0,
+  }))
 
   const isLoading = overviewLoading || platformLoading
 

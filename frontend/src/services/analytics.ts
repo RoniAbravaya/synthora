@@ -3,16 +3,40 @@
  */
 
 import { apiClient } from "@/lib/api"
-import type { AnalyticsOverview, AnalyticsMetrics, TimeSeriesDataPoint, SocialPlatform } from "@/types"
+import type { TimeSeriesDataPoint, SocialPlatform } from "@/types"
+
+// Response types matching backend schemas
+export interface SummaryMetrics {
+  views: number
+  likes: number
+  comments: number
+  shares: number
+  saves: number
+  engagement_rate: number
+}
 
 export interface OverviewResponse {
-  overview: AnalyticsOverview
-  period: string
+  period_days: number
+  total_posts: number
+  summary: SummaryMetrics
+  by_platform: Record<string, Record<string, number>>
+  views_change?: number | null
+  likes_change?: number | null
+  engagement_change?: number | null
+}
+
+export interface PlatformMetrics {
+  platform: string
+  views: number
+  likes: number
+  comments: number
+  shares: number
+  engagement_rate: number
 }
 
 export interface PlatformComparisonResponse {
-  platforms: Record<SocialPlatform, AnalyticsMetrics>
-  best_performing: SocialPlatform | null
+  period_days: number
+  platforms: PlatformMetrics[]
 }
 
 export interface TimeSeriesResponse {
@@ -58,15 +82,17 @@ export interface PostAnalyticsResponse {
 export const analyticsService = {
   /**
    * Get dashboard overview.
+   * @param days - Number of days to fetch analytics for (default: 30)
    */
-  getOverview: (period?: "7d" | "30d" | "90d") =>
-    apiClient.get<OverviewResponse>("/analytics/overview", { params: { period } }),
+  getOverview: (days?: number) =>
+    apiClient.get<OverviewResponse>("/analytics/overview", { params: { days: days ?? 30 } }),
 
   /**
    * Get platform comparison.
+   * @param days - Number of days to fetch analytics for (default: 30)
    */
-  getPlatformComparison: (period?: "7d" | "30d" | "90d") =>
-    apiClient.get<PlatformComparisonResponse>("/analytics/platforms", { params: { period } }),
+  getPlatformComparison: (days?: number) =>
+    apiClient.get<PlatformComparisonResponse>("/analytics/platforms", { params: { days: days ?? 30 } }),
 
   /**
    * Get time series data for a metric.
