@@ -4,7 +4,8 @@
  * Connect and manage social media accounts.
  */
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSearchParams } from "react-router-dom"
 import {
   Youtube,
   Instagram,
@@ -35,6 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import toast from "react-hot-toast"
 import type { SocialAccount, SocialPlatform } from "@/types"
 
 // =============================================================================
@@ -225,11 +227,43 @@ function ConnectPlatformCard({ platform, onConnect, isConnecting }: ConnectPlatf
 export default function SocialAccountsPage() {
   const [disconnectId, setDisconnectId] = useState<string | null>(null)
   const [connectingPlatform, setConnectingPlatform] = useState<SocialPlatform | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const { data, isLoading } = useSocialAccounts()
+  const { data, isLoading, refetch } = useSocialAccounts()
   const connectMutation = useConnectAccount()
   const disconnectMutation = useDisconnectAccount()
   const refreshMutation = useRefreshToken()
+
+  // Handle OAuth callback query parameters
+  useEffect(() => {
+    const success = searchParams.get("success")
+    const error = searchParams.get("error")
+    const platform = searchParams.get("platform")
+    const account = searchParams.get("account")
+
+    if (success === "true" && platform) {
+      toast.success(`${platform.charAt(0).toUpperCase() + platform.slice(1)} account "${account || ''}" connected successfully!`)
+      refetch() // Refresh the accounts list
+      // Clear the query params
+      setSearchParams({})
+    } else if (error && platform) {
+      const errorMessages: Record<string, string> = {
+        token_exchange_failed: "Failed to complete authentication. Please try again.",
+        channel_fetch_failed: "Could not fetch your channel information. Please try again.",
+        no_channel: "No channel found for this account. Make sure you have a YouTube channel.",
+        invalid_state: "Authentication session expired. Please try again.",
+        user_not_found: "Session expired. Please log in again.",
+        oauth_not_configured: "OAuth is not configured for this platform. Please contact support.",
+        platform_not_implemented: "This platform is not yet supported.",
+        server_error: "An unexpected error occurred. Please try again.",
+        missing_params: "Invalid callback. Please try again.",
+      }
+      const message = errorMessages[error] || `Failed to connect ${platform}: ${error}`
+      toast.error(message)
+      // Clear the query params
+      setSearchParams({})
+    }
+  }, [searchParams, setSearchParams, refetch])
 
   const accounts = data?.accounts || []
   const connectedPlatforms = accounts.map((a) => a.platform)

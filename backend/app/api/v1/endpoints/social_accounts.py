@@ -6,9 +6,11 @@ Handles social media account connections and OAuth flows.
 
 import logging
 import uuid
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -17,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.auth import get_current_active_user
 from app.core.config import get_settings
+from app.core.security import encrypt_value
 from app.models.user import User
 from app.models.social_account import SocialAccount, SocialPlatform
 
@@ -300,25 +303,19 @@ async def initiate_oauth(
     """
     Initiate OAuth flow for a social platform (redirect-based).
     
-    For YouTube, use the /connect/youtube/firebase endpoint instead.
-    
     Returns an authorization URL that the frontend should redirect the user to.
     
     **Note:** Returns an error if OAuth is not configured for this platform.
     """
+    import secrets
+    import urllib.parse
+    
     # Validate platform
     valid_platforms = ["youtube", "tiktok", "instagram", "facebook"]
     if platform not in valid_platforms:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid platform. Must be one of: {', '.join(valid_platforms)}",
-        )
-    
-    # For YouTube, recommend using Firebase OAuth
-    if platform == "youtube":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="YouTube uses Firebase OAuth. Use the /connect/youtube/firebase endpoint or the frontend popup flow.",
         )
     
     # Check if OAuth is configured
@@ -329,34 +326,49 @@ async def initiate_oauth(
             detail=f"OAuth for {platform} is not configured. Please contact the administrator to set up {platform} integration.",
         )
     
-    # Build the authorization URL
-    # This is a simplified version - in production, you'd use the actual OAuth library
-    base_urls = {
-        "tiktok": "https://www.tiktok.com/auth/authorize/",
-        "instagram": "https://api.instagram.com/oauth/authorize",
-        "facebook": "https://www.facebook.com/v18.0/dialog/oauth",
-    }
+    # Generate state for CSRF protection (includes user_id for callback)
+    # Format: random_token:user_id
+    random_token = secrets.token_urlsafe(32)
+    state = f"{random_token}:{user.id}"
     
-    import secrets
-    import urllib.parse
+    # Build redirect URI using the configured backend URL
+    redirect_uri = settings.youtube_redirect_uri if platform == "youtube" else \
+                   settings.tiktok_redirect_uri if platform == "tiktok" else \
+                   settings.instagram_redirect_uri if platform == "instagram" else \
+                   settings.facebook_redirect_uri
     
-    # Generate state for CSRF protection
-    state = secrets.token_urlsafe(32)
+    # Build the authorization URL based on platform
+    if platform == "youtube":
+        # Google OAuth 2.0 for YouTube
+        base_url = "https://accounts.google.com/o/oauth2/v2/auth"
+        params = {
+            "client_id": oauth_config["client_id"],
+            "redirect_uri": redirect_uri,
+            "scope": " ".join(oauth_config["scopes"]),
+            "state": state,
+            "response_type": "code",
+            "access_type": "offline",  # Request refresh token
+            "prompt": "consent",  # Force consent to get refresh token
+        }
+    else:
+        # Other platforms
+        base_urls = {
+            "tiktok": "https://www.tiktok.com/auth/authorize/",
+            "instagram": "https://api.instagram.com/oauth/authorize",
+            "facebook": "https://www.facebook.com/v18.0/dialog/oauth",
+        }
+        base_url = base_urls[platform]
+        params = {
+            "client_id": oauth_config["client_id"],
+            "redirect_uri": redirect_uri,
+            "scope": " ".join(oauth_config["scopes"]),
+            "state": state,
+            "response_type": "code",
+        }
     
-    # Build redirect URI
-    api_url = getattr(settings, "API_URL", None) or f"http://localhost:{getattr(settings, 'PORT', 8000)}"
-    redirect_uri = f"{api_url}/api/v1/social-accounts/callback/{platform}"
+    auth_url = f"{base_url}?{urllib.parse.urlencode(params)}"
     
-    # Build authorization URL
-    params = {
-        "client_id": oauth_config["client_id"],
-        "redirect_uri": redirect_uri,
-        "scope": " ".join(oauth_config["scopes"]),
-        "state": state,
-        "response_type": "code",
-    }
-    
-    auth_url = f"{base_urls[platform]}?{urllib.parse.urlencode(params)}"
+    logger.info(f"Generated OAuth URL for {platform}, user {user.id}")
     
     return {
         "authorization_url": auth_url,
@@ -368,8 +380,8 @@ async def initiate_oauth(
 @router.get("/callback/{platform}")
 async def oauth_callback(
     platform: str,
-    code: str = Query(..., description="Authorization code from OAuth"),
-    state: str = Query(..., description="State parameter for CSRF validation"),
+    code: str = Query(default=None, description="Authorization code from OAuth"),
+    state: str = Query(default=None, description="State parameter for CSRF validation"),
     error: Optional[str] = Query(default=None),
     error_description: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
@@ -378,27 +390,183 @@ async def oauth_callback(
     OAuth callback endpoint.
     
     This endpoint is called by the social platform after user authorization.
-    Redirects to the frontend with success/error status.
+    Exchanges the authorization code for access and refresh tokens,
+    then redirects to the frontend with success/error status.
     """
-    frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
+    frontend_url = settings.FRONTEND_URL
     
     # Check for OAuth errors
     if error:
         logger.error(f"OAuth error for {platform}: {error} - {error_description}")
         return RedirectResponse(
-            url=f"{frontend_url}/social-accounts?error={error}&platform={platform}"
+            url=f"{frontend_url}/settings/social?error={error}&platform={platform}"
         )
     
-    # For now, redirect with a message that OAuth is not fully implemented
-    # In production, you would:
-    # 1. Validate the state
-    # 2. Exchange the code for tokens
-    # 3. Get the user profile
-    # 4. Create/update the social account
+    # Validate required parameters
+    if not code or not state:
+        logger.error(f"Missing code or state in OAuth callback for {platform}")
+        return RedirectResponse(
+            url=f"{frontend_url}/settings/social?error=missing_params&platform={platform}"
+        )
     
-    return RedirectResponse(
-        url=f"{frontend_url}/social-accounts?error=oauth_not_configured&platform={platform}"
-    )
+    # Extract user_id from state (format: random_token:user_id)
+    try:
+        _, user_id_str = state.rsplit(":", 1)
+        user_id = UUID(user_id_str)
+    except (ValueError, AttributeError) as e:
+        logger.error(f"Invalid state format in OAuth callback: {e}")
+        return RedirectResponse(
+            url=f"{frontend_url}/settings/social?error=invalid_state&platform={platform}"
+        )
+    
+    # Get user from database
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        logger.error(f"User not found for OAuth callback: {user_id}")
+        return RedirectResponse(
+            url=f"{frontend_url}/settings/social?error=user_not_found&platform={platform}"
+        )
+    
+    # Get OAuth config
+    oauth_config = get_oauth_config(platform)
+    if not oauth_config:
+        return RedirectResponse(
+            url=f"{frontend_url}/settings/social?error=oauth_not_configured&platform={platform}"
+        )
+    
+    # Get redirect URI
+    redirect_uri = settings.youtube_redirect_uri if platform == "youtube" else \
+                   settings.tiktok_redirect_uri if platform == "tiktok" else \
+                   settings.instagram_redirect_uri if platform == "instagram" else \
+                   settings.facebook_redirect_uri
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            if platform == "youtube":
+                # Exchange code for tokens with Google
+                token_response = await client.post(
+                    "https://oauth2.googleapis.com/token",
+                    data={
+                        "client_id": oauth_config["client_id"],
+                        "client_secret": oauth_config["client_secret"],
+                        "code": code,
+                        "grant_type": "authorization_code",
+                        "redirect_uri": redirect_uri,
+                    },
+                )
+                
+                if token_response.status_code != 200:
+                    logger.error(f"YouTube token exchange failed: {token_response.status_code} - {token_response.text}")
+                    return RedirectResponse(
+                        url=f"{frontend_url}/settings/social?error=token_exchange_failed&platform={platform}"
+                    )
+                
+                token_data = token_response.json()
+                access_token = token_data["access_token"]
+                refresh_token = token_data.get("refresh_token")  # May not be present on re-auth
+                expires_in = token_data.get("expires_in", 3600)
+                token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+                
+                logger.info(f"YouTube token exchange successful. Refresh token present: {refresh_token is not None}")
+                
+                # Get YouTube channel info
+                channel_response = await client.get(
+                    "https://www.googleapis.com/youtube/v3/channels",
+                    params={
+                        "part": "snippet,statistics",
+                        "mine": "true",
+                    },
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                    },
+                )
+                
+                if channel_response.status_code != 200:
+                    logger.error(f"YouTube channel fetch failed: {channel_response.status_code} - {channel_response.text}")
+                    return RedirectResponse(
+                        url=f"{frontend_url}/settings/social?error=channel_fetch_failed&platform={platform}"
+                    )
+                
+                channel_data = channel_response.json()
+                
+                if not channel_data.get("items"):
+                    return RedirectResponse(
+                        url=f"{frontend_url}/settings/social?error=no_channel&platform={platform}"
+                    )
+                
+                channel = channel_data["items"][0]
+                channel_id = channel["id"]
+                channel_title = channel["snippet"]["title"]
+                channel_thumbnail = channel["snippet"]["thumbnails"]["default"]["url"]
+                profile_url = f"https://youtube.com/channel/{channel_id}"
+                
+                # Check if account already exists
+                existing_account = db.query(SocialAccount).filter(
+                    SocialAccount.user_id == user.id,
+                    SocialAccount.platform == platform,
+                    SocialAccount.platform_user_id == channel_id,
+                ).first()
+                
+                # Encrypt tokens
+                encrypted_access = encrypt_value(access_token)
+                encrypted_refresh = encrypt_value(refresh_token) if refresh_token else None
+                
+                if existing_account:
+                    # Update existing account
+                    existing_account.username = channel_title
+                    existing_account.display_name = channel_title
+                    existing_account.avatar_url = channel_thumbnail
+                    existing_account.profile_url = profile_url
+                    existing_account.access_token_encrypted = encrypted_access
+                    # Only update refresh token if we got a new one
+                    if encrypted_refresh:
+                        existing_account.refresh_token_encrypted = encrypted_refresh
+                    existing_account.token_expires_at = token_expires_at
+                    existing_account.scopes = oauth_config["scopes"]
+                    existing_account.status = "connected"
+                    existing_account.is_active = True
+                    
+                    db.commit()
+                    logger.info(f"Updated YouTube account for user {user.id}: {channel_title}")
+                else:
+                    # Create new account
+                    new_account = SocialAccount(
+                        id=uuid.uuid4(),
+                        user_id=user.id,
+                        platform=platform,
+                        platform_user_id=channel_id,
+                        username=channel_title,
+                        display_name=channel_title,
+                        avatar_url=channel_thumbnail,
+                        profile_url=profile_url,
+                        access_token_encrypted=encrypted_access,
+                        refresh_token_encrypted=encrypted_refresh,
+                        token_expires_at=token_expires_at,
+                        scopes=oauth_config["scopes"],
+                        status="connected",
+                        is_active=True,
+                    )
+                    
+                    db.add(new_account)
+                    db.commit()
+                    logger.info(f"Created YouTube account for user {user.id}: {channel_title}")
+                
+                # Redirect to frontend with success
+                return RedirectResponse(
+                    url=f"{frontend_url}/settings/social?success=true&platform={platform}&account={channel_title}"
+                )
+            
+            else:
+                # Other platforms - not yet fully implemented
+                return RedirectResponse(
+                    url=f"{frontend_url}/settings/social?error=platform_not_implemented&platform={platform}"
+                )
+    
+    except Exception as e:
+        logger.exception(f"OAuth callback error for {platform}: {e}")
+        return RedirectResponse(
+            url=f"{frontend_url}/settings/social?error=server_error&platform={platform}"
+        )
 
 
 @router.post("/callback/{platform}/manual")
