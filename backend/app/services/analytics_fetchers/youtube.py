@@ -43,13 +43,24 @@ class YouTubeFetcher(BaseFetcher):
             
         Returns:
             FetchResult with video metrics
+            
+        Note:
+            YouTube's analytics have known delays:
+            - Basic stats (views, likes, comments): Usually available within 
+              minutes, but can take up to a few hours for newly uploaded videos.
+            - Detailed analytics (watch time, retention): Typically 48-72 hours
+              delay from the YouTube Analytics API.
         """
+        logger.info(f"=== STARTING YOUTUBE ANALYTICS FETCH ===")
+        logger.info(f"Fetching analytics for YouTube video: {video_id}")
+        
         try:
             async with httpx.AsyncClient() as client:
                 # First, get basic video statistics from Data API
                 video_stats = await self._fetch_video_stats(client, video_id)
                 
                 if not video_stats:
+                    logger.error(f"Failed to fetch basic stats for video {video_id}")
                     return FetchResult(
                         success=False,
                         error="Failed to fetch video statistics",
@@ -57,14 +68,17 @@ class YouTubeFetcher(BaseFetcher):
                 
                 # Try to get detailed analytics from Analytics API
                 # Note: Analytics API requires channel ownership
+                logger.info(f"Fetching detailed analytics from YouTube Analytics API...")
                 detailed_analytics = await self._fetch_detailed_analytics(
                     client, video_id
                 )
                 
+                logger.info(f"Detailed analytics result: {detailed_analytics}")
+                
                 # Combine results
                 # Note: impressions and click_through_rate require YouTube Partner 
                 # Program access, so they default to 0 for non-partner channels
-                return FetchResult(
+                result = FetchResult(
                     success=True,
                     views=video_stats.get("viewCount", 0),
                     likes=video_stats.get("likeCount", 0),
@@ -84,8 +98,16 @@ class YouTubeFetcher(BaseFetcher):
                     },
                 )
                 
+                logger.info(f"=== YOUTUBE ANALYTICS FETCH COMPLETE ===")
+                logger.info(
+                    f"Final result: views={result.views}, likes={result.likes}, "
+                    f"comments={result.comments}, shares={result.shares}"
+                )
+                
+                return result
+                
         except Exception as e:
-            logger.error(f"Failed to fetch YouTube analytics for {video_id}: {e}")
+            logger.exception(f"Failed to fetch YouTube analytics for {video_id}: {e}")
             return FetchResult(
                 success=False,
                 error=str(e),
@@ -105,8 +127,17 @@ class YouTubeFetcher(BaseFetcher):
             
         Returns:
             Dictionary with view/like/comment counts
+            
+        Note:
+            YouTube's Data API can have delays in reporting statistics,
+            especially for newly uploaded videos. Stats may show 0 for
+            the first few minutes to hours after upload.
         """
         try:
+            logger.info(f"=== FETCHING YOUTUBE VIDEO STATS ===")
+            logger.info(f"Video ID: {video_id}")
+            logger.info(f"Access token length: {len(self.access_token) if self.access_token else 0}")
+            
             response = await client.get(
                 f"{YOUTUBE_DATA_API}/videos",
                 params={
@@ -118,12 +149,16 @@ class YouTubeFetcher(BaseFetcher):
                 },
             )
             
+            logger.info(f"YouTube Data API response status: {response.status_code}")
+            
             if response.status_code != 200:
                 logger.error(f"YouTube Data API error: {response.status_code} - {response.text}")
                 return None
             
             data = response.json()
             items = data.get("items", [])
+            
+            logger.info(f"YouTube API returned {len(items)} items")
             
             if not items:
                 logger.warning(f"No video found with ID: {video_id}")
@@ -132,7 +167,12 @@ class YouTubeFetcher(BaseFetcher):
             stats = items[0].get("statistics", {})
             content = items[0].get("contentDetails", {})
             
-            return {
+            # Log raw statistics from YouTube
+            logger.info(f"=== RAW YOUTUBE STATS ===")
+            logger.info(f"Raw statistics response: {stats}")
+            logger.info(f"Raw contentDetails response: {content}")
+            
+            result = {
                 "viewCount": int(stats.get("viewCount", 0)),
                 "likeCount": int(stats.get("likeCount", 0)),
                 "commentCount": int(stats.get("commentCount", 0)),
@@ -140,8 +180,21 @@ class YouTubeFetcher(BaseFetcher):
                 "duration": content.get("duration", "PT0S"),
             }
             
+            # Log parsed values
+            logger.info(f"Parsed stats: views={result['viewCount']}, likes={result['likeCount']}, comments={result['commentCount']}")
+            
+            # Warn if all stats are 0 (common for new videos)
+            if result['viewCount'] == 0 and result['likeCount'] == 0 and result['commentCount'] == 0:
+                logger.warning(
+                    f"All YouTube stats are 0 for video {video_id}. "
+                    "This is normal for newly uploaded videos. "
+                    "YouTube may take 24-48 hours to fully report engagement metrics."
+                )
+            
+            return result
+            
         except Exception as e:
-            logger.error(f"Error fetching video stats: {e}")
+            logger.exception(f"Error fetching video stats: {e}")
             return None
     
     async def _fetch_detailed_analytics(
@@ -153,6 +206,8 @@ class YouTubeFetcher(BaseFetcher):
         Fetch detailed analytics from YouTube Analytics API.
         
         Note: This requires the video to be on a channel the user owns.
+        The YouTube Analytics API typically has a 48-72 hour delay before
+        data becomes available for newly uploaded videos.
         
         Args:
             client: HTTP client
@@ -165,6 +220,9 @@ class YouTubeFetcher(BaseFetcher):
             # Calculate date range (last 28 days)
             end_date = datetime.now(timezone.utc).date()
             start_date = end_date - timedelta(days=28)
+            
+            logger.info(f"Fetching detailed analytics for video {video_id}")
+            logger.info(f"Date range: {start_date} to {end_date}")
             
             # Note: 'impressions' and 'impressionClickThroughRate' require YouTube 
             # Partner Program membership or elevated API access, so we exclude them
@@ -194,17 +252,29 @@ class YouTubeFetcher(BaseFetcher):
                 },
             )
             
+            logger.info(f"YouTube Analytics API response status: {response.status_code}")
+            
             if response.status_code != 200:
                 # Analytics API might not be available or video not owned
                 logger.warning(
                     f"YouTube Analytics API returned {response.status_code}: {response.text}"
+                )
+                logger.warning(
+                    "This is normal for newly uploaded videos. The YouTube Analytics API "
+                    "typically has a 48-72 hour delay before data becomes available."
                 )
                 return {}
             
             data = response.json()
             rows = data.get("rows", [])
             
+            logger.info(f"YouTube Analytics API returned {len(rows)} row(s)")
+            
             if not rows:
+                logger.info(
+                    f"No detailed analytics data yet for video {video_id}. "
+                    "Data may not be available for 48-72 hours after upload."
+                )
                 return {}
             
             # Map column headers to values
@@ -215,10 +285,12 @@ class YouTubeFetcher(BaseFetcher):
             for header, value in zip(headers, values):
                 result[header] = value
             
+            logger.info(f"Detailed analytics result: {result}")
+            
             return result
             
         except Exception as e:
-            logger.error(f"Error fetching detailed analytics: {e}")
+            logger.exception(f"Error fetching detailed analytics: {e}")
             return {}
     
     async def fetch_channel_analytics(self) -> ChannelAnalytics:

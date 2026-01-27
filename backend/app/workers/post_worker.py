@@ -126,7 +126,7 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
     Returns:
         Dictionary with results
     """
-    from app.workers.analytics_worker import queue_analytics_sync
+    from app.workers.analytics_worker import schedule_analytics_sync_sequence
     
     logger.info(f"_publish_post: Starting for post {post.id} to platform {post.platform}")
     
@@ -203,13 +203,18 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
             db.commit()
             logger.info(f"_publish_post: Post marked as published, post_url={result.post_url}")
             
-            # Schedule analytics sync after 1 hour (to allow metrics to accumulate)
-            # This is queued with a delay in production
+            # Schedule a sequence of analytics syncs over time
+            # This is important because platforms like YouTube have delays
+            # in reporting statistics (can take hours to days for full data)
             try:
-                queue_analytics_sync(post.id)
-                logger.info(f"Queued analytics sync for post {post.id}")
+                job_ids = schedule_analytics_sync_sequence(post.id)
+                scheduled_count = sum(1 for j in job_ids if j is not None)
+                logger.info(
+                    f"Scheduled {scheduled_count} analytics sync jobs for post {post.id}. "
+                    "Note: YouTube stats may take 24-48 hours to fully populate."
+                )
             except Exception as e:
-                logger.warning(f"Failed to queue analytics sync: {e}")
+                logger.warning(f"Failed to schedule analytics sync sequence: {e}")
             
             return {
                 "success": True,

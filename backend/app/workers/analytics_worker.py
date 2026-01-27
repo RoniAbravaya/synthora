@@ -6,7 +6,7 @@ Background jobs for fetching and syncing analytics data.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -96,6 +96,23 @@ def sync_post_analytics_job(post_id: str) -> dict:
                 loop.close()
             
             if fetch_result.success:
+                # Log information about the fetched data
+                logger.info(
+                    f"Analytics fetch successful for post {post_id}: "
+                    f"views={fetch_result.views}, likes={fetch_result.likes}, "
+                    f"comments={fetch_result.comments}, shares={fetch_result.shares}"
+                )
+                
+                # Warn if all metrics are 0 (common for newly published posts)
+                if (fetch_result.views == 0 and fetch_result.likes == 0 and 
+                    fetch_result.comments == 0 and fetch_result.shares == 0):
+                    logger.warning(
+                        f"All metrics are 0 for post {post_id} on {platform_name}. "
+                        "This is normal for newly published posts. Platforms like YouTube "
+                        "can take 24-48 hours to fully report engagement metrics. "
+                        "Additional syncs are scheduled automatically."
+                    )
+                
                 # Store analytics
                 analytics_service.store_analytics(
                     post_id=post_uuid,
@@ -120,8 +137,13 @@ def sync_post_analytics_job(post_id: str) -> dict:
                     "platform": platform_name,
                     "views": fetch_result.views,
                     "likes": fetch_result.likes,
+                    "comments": fetch_result.comments,
+                    "shares": fetch_result.shares,
+                    "note": "Analytics may update over time as platforms report data" if 
+                           fetch_result.views == 0 else None,
                 }
             else:
+                logger.error(f"Analytics fetch failed for post {post_id}: {fetch_result.error}")
                 return {
                     "success": False,
                     "error": fetch_result.error,
@@ -318,13 +340,18 @@ def sync_channel_analytics_job(user_id: str) -> dict:
 # Queue Helpers
 # =========================================================================
 
-def queue_analytics_sync(post_id: UUID, queue_name: str = "analytics") -> Optional[str]:
+def queue_analytics_sync(
+    post_id: UUID, 
+    queue_name: str = "analytics",
+    delay_seconds: int = 0,
+) -> Optional[str]:
     """
     Queue an analytics sync job for a post.
     
     Args:
         post_id: Post UUID
         queue_name: Name of the queue
+        delay_seconds: Delay in seconds before executing the job (default: 0 = immediate)
         
     Returns:
         Job ID if queued successfully
@@ -333,6 +360,7 @@ def queue_analytics_sync(post_id: UUID, queue_name: str = "analytics") -> Option
         from redis import Redis
         from rq import Queue
         from app.core.config import get_settings
+        from datetime import timedelta
         
         settings = get_settings()
         if not settings.REDIS_URL:
@@ -341,17 +369,67 @@ def queue_analytics_sync(post_id: UUID, queue_name: str = "analytics") -> Option
         redis_conn = Redis.from_url(settings.REDIS_URL)
         queue = Queue(queue_name, connection=redis_conn)
         
-        job = queue.enqueue(
-            sync_post_analytics_job,
-            str(post_id),
-            job_timeout=300,  # 5 minutes
-        )
+        if delay_seconds > 0:
+            # Schedule with delay
+            logger.info(f"Scheduling analytics sync for post {post_id} with {delay_seconds}s delay")
+            job = queue.enqueue_in(
+                timedelta(seconds=delay_seconds),
+                sync_post_analytics_job,
+                str(post_id),
+                job_timeout=300,  # 5 minutes
+            )
+        else:
+            # Immediate execution
+            job = queue.enqueue(
+                sync_post_analytics_job,
+                str(post_id),
+                job_timeout=300,  # 5 minutes
+            )
         
         return job.id
         
     except Exception as e:
         logger.error(f"Failed to queue analytics sync: {e}")
         return None
+
+
+def schedule_analytics_sync_sequence(post_id: UUID) -> List[Optional[str]]:
+    """
+    Schedule a sequence of analytics sync jobs for a newly published post.
+    
+    YouTube and other platforms have delays in reporting statistics,
+    so we schedule multiple syncs over time to capture accurate data:
+    - Immediately (basic check)
+    - After 1 hour (basic stats should be available)
+    - After 6 hours (more accurate stats)
+    - After 24 hours (stable stats)
+    - After 48 hours (detailed analytics available)
+    
+    Args:
+        post_id: Post UUID
+        
+    Returns:
+        List of job IDs (None for failed queues)
+    """
+    delays = [
+        0,          # Immediate
+        3600,       # 1 hour
+        21600,      # 6 hours
+        86400,      # 24 hours
+        172800,     # 48 hours
+    ]
+    
+    job_ids = []
+    for delay in delays:
+        job_id = queue_analytics_sync(post_id, delay_seconds=delay)
+        job_ids.append(job_id)
+        if delay == 0:
+            logger.info(f"Scheduled immediate analytics sync for post {post_id}")
+        else:
+            hours = delay // 3600
+            logger.info(f"Scheduled analytics sync for post {post_id} in {hours} hour(s)")
+    
+    return job_ids
 
 
 def queue_user_analytics_sync(user_id: UUID, queue_name: str = "analytics") -> Optional[str]:
