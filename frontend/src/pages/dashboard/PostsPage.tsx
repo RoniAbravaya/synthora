@@ -61,25 +61,7 @@ import {
 } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
 import toast from "react-hot-toast"
-import type { SocialPlatform, Video as VideoType } from "@/types"
-
-// =============================================================================
-// Types
-// =============================================================================
-
-interface Post {
-  id: string
-  video_id: string
-  platform: string
-  caption: string
-  hashtags: string[]
-  status: "draft" | "scheduled" | "publishing" | "published" | "failed"
-  scheduled_at: string | null
-  published_at: string | null
-  post_url: string | null
-  error_message: string | null
-  created_at: string
-}
+import type { Post, SocialPlatform, Video as VideoType } from "@/types"
 
 // =============================================================================
 // Platform Configuration
@@ -154,13 +136,16 @@ interface PostCardProps {
 }
 
 function PostCard({ post, onDelete, onPublish }: PostCardProps) {
+  // Get the first platform (each post is for one platform now)
+  const platform = post.platforms?.[0] || "youtube"
+  
   return (
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {platformIcons[post.platform]}
-            <span className="font-medium capitalize">{post.platform}</span>
+            {platformIcons[platform]}
+            <span className="font-medium capitalize">{platform}</span>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -169,15 +154,15 @@ function PostCard({ post, onDelete, onPublish }: PostCardProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {post.post_url && (
+              {post.status === "published" && (
                 <DropdownMenuItem asChild>
-                  <a href={post.post_url} target="_blank" rel="noopener noreferrer">
+                  <a href="#" target="_blank" rel="noopener noreferrer">
                     <Eye className="mr-2 h-4 w-4" />
                     View Post
                   </a>
                 </DropdownMenuItem>
               )}
-              {post.status === "draft" && (
+              {(post.status === "draft" || post.status === "failed") && (
                 <DropdownMenuItem onClick={onPublish}>
                   <Send className="mr-2 h-4 w-4" />
                   Publish Now
@@ -195,7 +180,7 @@ function PostCard({ post, onDelete, onPublish }: PostCardProps) {
       <CardContent className="space-y-3">
         {/* Caption */}
         <p className="line-clamp-2 text-sm">
-          {post.caption || "No caption"}
+          {post.description || post.title || "No caption"}
         </p>
 
         {/* Hashtags */}
@@ -295,20 +280,27 @@ function CreatePostDialog({ open, onClose, videoId }: CreatePostDialogProps) {
         video_id: videoId,
         title: video?.title || "New Video",
         description: caption,
+        hashtags: hashtagList,
         platforms: selectedPlatforms,
-        scheduled_at: publishNow ? undefined : undefined, // For now, always publish now or draft
+        scheduled_at: undefined, // For now, always create as draft first
       })
 
       // If publish now is selected, publish immediately
       if (publishNow && response.post) {
-        await postsService.publishNow(response.post.id)
+        try {
+          await postsService.publishNow(response.post.id)
+        } catch (err) {
+          console.error("Publish failed:", err)
+          // Post was created but publish failed - still return success
+          toast.error("Post created but publishing failed. You can try publishing again from the posts list.")
+        }
       }
 
       return response
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["posts"] })
-      toast.success(publishNow ? "Post published!" : "Post created as draft")
+      toast.success(publishNow ? "Publishing post..." : "Post created as draft")
       handleClose()
     },
     onError: (error: Error) => {
@@ -572,7 +564,8 @@ export default function PostsPage() {
   // Filter by search
   const filteredPosts = posts.filter(
     (post) =>
-      post.caption?.toLowerCase().includes(search.toLowerCase()) ||
+      post.description?.toLowerCase().includes(search.toLowerCase()) ||
+      post.title?.toLowerCase().includes(search.toLowerCase()) ||
       post.hashtags?.some((tag) => tag.toLowerCase().includes(search.toLowerCase()))
   )
 

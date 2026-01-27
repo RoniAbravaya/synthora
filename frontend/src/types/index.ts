@@ -165,21 +165,26 @@ export type PostStatus = "draft" | "scheduled" | "publishing" | "published" | "f
 export interface Post {
   id: string
   video_id: string
-  title: string
+  user_id: string
+  title: string | null
   description: string | null
-  platforms: SocialPlatform[]
+  hashtags: string[]
+  platforms: string[]
+  platform_status: Record<string, { status: string }>
+  platform_overrides: Record<string, unknown>
   status: PostStatus
   scheduled_at: string | null
   published_at: string | null
-  error_message: string | null
-  platform_post_ids: Record<string, string>
+  error_message?: string | null
   created_at: string
+  updated_at: string
 }
 
 export interface PostCreate {
   video_id: string
-  title: string
+  title?: string
   description?: string
+  hashtags?: string[]
   platforms: SocialPlatform[]
   scheduled_at?: string
   platform_overrides?: Record<string, { title?: string; description?: string }>

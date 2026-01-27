@@ -137,7 +137,7 @@ async def get_calendar(
 # Get Post
 # =============================================================================
 
-@router.get("/{post_id}", response_model=PostResponse)
+@router.get("/{post_id}")
 async def get_post(
     post_id: UUID,
     user: User = Depends(get_current_active_user),
@@ -166,14 +166,14 @@ async def get_post(
             detail="Not authorized to access this post",
         )
     
-    return _post_to_response(post)
+    return {"post": _post_to_response(post)}
 
 
 # =============================================================================
 # Create Post
 # =============================================================================
 
-@router.post("", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_post(
     request: PostCreate,
     user: User = Depends(get_current_active_user),
@@ -222,7 +222,7 @@ async def create_post(
             scheduler = get_scheduler()
             scheduler.enqueue_scheduled_post(post.id, post.scheduled_at)
         
-        return _post_to_response(post)
+        return {"post": _post_to_response(post)}
         
     except ValueError as e:
         raise HTTPException(
@@ -235,7 +235,7 @@ async def create_post(
 # Update Post
 # =============================================================================
 
-@router.patch("/{post_id}", response_model=PostResponse)
+@router.patch("/{post_id}")
 async def update_post(
     post_id: UUID,
     request: PostUpdate,
@@ -284,7 +284,7 @@ async def update_post(
             scheduler = get_scheduler()
             scheduler.enqueue_scheduled_post(post.id, post.scheduled_at)
         
-        return _post_to_response(post)
+        return {"post": _post_to_response(post)}
         
     except ValueError as e:
         raise HTTPException(
@@ -340,7 +340,7 @@ async def delete_post(
 # Publish Post
 # =============================================================================
 
-@router.post("/{post_id}/publish", response_model=PostResponse)
+@router.post("/{post_id}/publish")
 async def publish_post(
     post_id: UUID,
     user: User = Depends(get_current_active_user),
@@ -354,6 +354,8 @@ async def publish_post(
     
     **Requires:** Authentication (must own the post)
     """
+    import threading
+    
     post_service = PostService(db)
     post = post_service.get_by_id(post_id)
     
@@ -375,18 +377,29 @@ async def publish_post(
             detail=f"Cannot publish post in status: {post.status}",
         )
     
-    # Enqueue immediate publish job
-    scheduler = get_scheduler()
-    job = scheduler.queues["posts"].enqueue(
-        publish_post_now,
-        post_id=str(post.id),
-        job_timeout="5m",
-    )
-    
-    # Update post status
+    # Update post status to publishing
     post_service.start_publishing(post)
     
-    return _post_to_response(post)
+    # Try to enqueue via scheduler, or run in background thread
+    scheduler = get_scheduler()
+    if scheduler.is_redis_available and "posts" in scheduler.queues:
+        scheduler.queues["posts"].enqueue(
+            publish_post_now,
+            str(post.id),
+            job_timeout="5m",
+        )
+        logger.info(f"Enqueued publish job for post {post_id}")
+    else:
+        # Run in background thread if Redis not available
+        logger.info(f"Running publish synchronously for post {post_id}")
+        thread = threading.Thread(
+            target=publish_post_now,
+            args=(str(post.id),),
+            daemon=True
+        )
+        thread.start()
+    
+    return {"post": _post_to_response(post)}
 
 
 # =============================================================================
