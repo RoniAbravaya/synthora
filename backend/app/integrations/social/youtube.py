@@ -226,7 +226,7 @@ class YouTubeClient(BaseSocialClient):
         
         Args:
             access_token: OAuth access token
-            video_path: Path to video file
+            video_path: Path to video file or URL
             title: Video title
             description: Video description
             tags: Video tags
@@ -236,13 +236,45 @@ class YouTubeClient(BaseSocialClient):
         Returns:
             PostResult with upload status
         """
+        import tempfile
+        import json
+        
         try:
-            # Read video file
-            if not os.path.exists(video_path):
-                return PostResult(success=False, error="Video file not found")
+            video_data = None
+            video_filename = "video.mp4"
             
-            with open(video_path, "rb") as f:
-                video_data = f.read()
+            # Check if video_path is a URL
+            if video_path.startswith("http://") or video_path.startswith("https://"):
+                logger.info(f"Downloading video from URL: {video_path[:100]}...")
+                # Download video from URL
+                try:
+                    download_response = await self.client.get(
+                        video_path,
+                        timeout=300.0,  # 5 minutes for large videos
+                    )
+                    if download_response.status_code != 200:
+                        return PostResult(
+                            success=False,
+                            error=f"Failed to download video: HTTP {download_response.status_code}",
+                        )
+                    video_data = download_response.content
+                    logger.info(f"Downloaded video: {len(video_data)} bytes")
+                except Exception as e:
+                    logger.error(f"Error downloading video: {e}")
+                    return PostResult(success=False, error=f"Failed to download video: {str(e)}")
+            else:
+                # Read from local file
+                if not os.path.exists(video_path):
+                    return PostResult(success=False, error="Video file not found")
+                
+                with open(video_path, "rb") as f:
+                    video_data = f.read()
+                video_filename = os.path.basename(video_path)
+            
+            if not video_data:
+                return PostResult(success=False, error="No video data to upload")
+            
+            logger.info(f"Uploading video to YouTube: {title}")
             
             # Create video metadata
             metadata = {
@@ -258,27 +290,59 @@ class YouTubeClient(BaseSocialClient):
                 },
             }
             
-            # Upload video (simplified - production would use resumable upload)
-            response = await self.client.post(
-                f"{self.UPLOAD_URL}?uploadType=multipart&part=snippet,status",
+            # Use resumable upload for reliability
+            # Step 1: Initialize upload
+            init_response = await self.client.post(
+                f"{self.UPLOAD_URL}?uploadType=resumable&part=snippet,status",
                 headers={
                     "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                    "X-Upload-Content-Length": str(len(video_data)),
+                    "X-Upload-Content-Type": "video/*",
                 },
-                files={
-                    "": ("metadata", str(metadata), "application/json"),
-                    "video": (os.path.basename(video_path), video_data, "video/*"),
-                },
-                timeout=300.0,
+                content=json.dumps(metadata),
+                timeout=60.0,
             )
             
-            if response.status_code not in [200, 201]:
+            if init_response.status_code != 200:
+                logger.error(f"YouTube upload init failed: {init_response.status_code} - {init_response.text}")
                 return PostResult(
                     success=False,
-                    error=f"Upload failed: {response.text}",
+                    error=f"Upload initialization failed: {init_response.text}",
                 )
             
-            data = response.json()
+            # Get the upload URL from the Location header
+            upload_url = init_response.headers.get("Location")
+            if not upload_url:
+                return PostResult(
+                    success=False,
+                    error="No upload URL returned from YouTube",
+                )
+            
+            logger.info(f"Uploading video data ({len(video_data)} bytes)...")
+            
+            # Step 2: Upload the video data
+            upload_response = await self.client.put(
+                upload_url,
+                headers={
+                    "Content-Type": "video/*",
+                    "Content-Length": str(len(video_data)),
+                },
+                content=video_data,
+                timeout=600.0,  # 10 minutes for upload
+            )
+            
+            if upload_response.status_code not in [200, 201]:
+                logger.error(f"YouTube video upload failed: {upload_response.status_code} - {upload_response.text}")
+                return PostResult(
+                    success=False,
+                    error=f"Video upload failed: {upload_response.text}",
+                )
+            
+            data = upload_response.json()
             video_id = data.get("id")
+            
+            logger.info(f"YouTube upload successful! Video ID: {video_id}")
             
             return PostResult(
                 success=True,

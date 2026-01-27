@@ -89,14 +89,19 @@ def publish_post_now(post_id: str) -> Dict[str, Any]:
         post = post_service.get_by_id(UUID(post_id))
         
         if not post:
+            logger.error(f"Post not found: {post_id}")
             return {"success": False, "error": "Post not found"}
         
-        # Use string comparisons
-        if post.status not in ["draft", "scheduled"]:
+        # Allow draft, scheduled, or publishing status
+        # (publishing is set by the API endpoint before queuing)
+        if post.status not in ["draft", "scheduled", "publishing"]:
+            logger.warning(f"Cannot publish post {post_id} in status: {post.status}")
             return {"success": False, "error": f"Cannot publish post in status: {post.status}"}
         
+        logger.info(f"Publishing post {post_id} to {post.platform} (status: {post.status})")
         result = asyncio.run(_publish_post(db, post))
         
+        logger.info(f"Publish result for {post_id}: {result}")
         return result
         
     except Exception as e:
