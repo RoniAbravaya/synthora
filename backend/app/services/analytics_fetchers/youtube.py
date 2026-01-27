@@ -6,7 +6,7 @@ Fetches analytics data from the YouTube Analytics API.
 
 import logging
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -62,6 +62,8 @@ class YouTubeFetcher(BaseFetcher):
                 )
                 
                 # Combine results
+                # Note: impressions and click_through_rate require YouTube Partner 
+                # Program access, so they default to 0 for non-partner channels
                 return FetchResult(
                     success=True,
                     views=video_stats.get("viewCount", 0),
@@ -72,8 +74,8 @@ class YouTubeFetcher(BaseFetcher):
                     watch_time_seconds=detailed_analytics.get("estimatedMinutesWatched", 0) * 60,
                     avg_view_duration=detailed_analytics.get("averageViewDuration", 0),
                     retention_rate=detailed_analytics.get("averageViewPercentage", 0),
-                    impressions=detailed_analytics.get("impressions", 0),
-                    click_through_rate=detailed_analytics.get("impressionsClickThroughRate", 0),
+                    impressions=0,  # Requires YouTube Partner Program access
+                    click_through_rate=0,  # Requires YouTube Partner Program access
                     follower_change=detailed_analytics.get("subscribersGained", 0) - 
                                    detailed_analytics.get("subscribersLost", 0),
                     raw_data={
@@ -161,9 +163,12 @@ class YouTubeFetcher(BaseFetcher):
         """
         try:
             # Calculate date range (last 28 days)
-            end_date = datetime.utcnow().date()
+            end_date = datetime.now(timezone.utc).date()
             start_date = end_date - timedelta(days=28)
             
+            # Note: 'impressions' and 'impressionClickThroughRate' require YouTube 
+            # Partner Program membership or elevated API access, so we exclude them
+            # to avoid 400 errors for non-partner channels.
             response = await client.get(
                 f"{YOUTUBE_ANALYTICS_API}/reports",
                 params={
@@ -181,8 +186,6 @@ class YouTubeFetcher(BaseFetcher):
                         "comments",
                         "subscribersGained",
                         "subscribersLost",
-                        "impressions",
-                        "impressionClickThroughRate",
                     ]),
                     "filters": f"video=={video_id}",
                 },
@@ -292,7 +295,7 @@ class YouTubeFetcher(BaseFetcher):
         """
         try:
             # Last 28 days vs previous 28 days
-            end_date = datetime.utcnow().date()
+            end_date = datetime.now(timezone.utc).date()
             start_date = end_date - timedelta(days=28)
             
             response = await client.get(
