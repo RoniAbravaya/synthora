@@ -48,6 +48,42 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 # =============================================================================
+# Debug Endpoint (temporary)
+# =============================================================================
+
+@router.get("/debug/users")
+async def debug_list_users(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Debug endpoint to verify user data. Returns raw user info.
+    """
+    from sqlalchemy import text
+    
+    # Direct database query to verify data
+    users = db.query(User).all()
+    
+    logger.info(f"DEBUG: Found {len(users)} users in database")
+    
+    return {
+        "debug": True,
+        "total_users": len(users),
+        "users": [
+            {
+                "id": str(u.id),
+                "email": u.email,
+                "display_name": u.display_name,
+                "role": u.role,
+                "role_type": type(u.role).__name__,
+                "is_active": u.is_active,
+            }
+            for u in users
+        ]
+    }
+
+
+# =============================================================================
 # User Management
 # =============================================================================
 
