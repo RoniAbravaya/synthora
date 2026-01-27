@@ -80,7 +80,7 @@ def publish_post_now(post_id: str) -> Dict[str, Any]:
     Returns:
         Dictionary with publish results
     """
-    logger.info(f"Publishing post now: {post_id}")
+    logger.info(f"=== PUBLISH POST NOW STARTED: {post_id} ===")
     
     db = get_db()
     
@@ -92,20 +92,22 @@ def publish_post_now(post_id: str) -> Dict[str, Any]:
             logger.error(f"Post not found: {post_id}")
             return {"success": False, "error": "Post not found"}
         
+        logger.info(f"Post found: id={post.id}, platform={post.platform}, status={post.status}, video_id={post.video_id}")
+        
         # Allow draft, scheduled, or publishing status
         # (publishing is set by the API endpoint before queuing)
         if post.status not in ["draft", "scheduled", "publishing"]:
             logger.warning(f"Cannot publish post {post_id} in status: {post.status}")
             return {"success": False, "error": f"Cannot publish post in status: {post.status}"}
         
-        logger.info(f"Publishing post {post_id} to {post.platform} (status: {post.status})")
+        logger.info(f"Publishing post {post_id} to {post.platform} (current status: {post.status})")
         result = asyncio.run(_publish_post(db, post))
         
-        logger.info(f"Publish result for {post_id}: {result}")
+        logger.info(f"=== PUBLISH RESULT for {post_id}: {result} ===")
         return result
         
     except Exception as e:
-        logger.exception(f"Error publishing post {post_id}")
+        logger.exception(f"=== PUBLISH ERROR for {post_id}: {e} ===")
         return {"success": False, "error": str(e)}
     finally:
         db.close()
@@ -126,19 +128,25 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
     """
     from app.workers.analytics_worker import queue_analytics_sync
     
+    logger.info(f"_publish_post: Starting for post {post.id} to platform {post.platform}")
+    
     post_service = PostService(db)
     oauth_service = SocialOAuthService(db)
     
     # Mark post as publishing
     post.status = "publishing"
     db.commit()
+    logger.info(f"_publish_post: Status set to publishing")
     
     # Get video
     video = db.query(Video).filter(Video.id == post.video_id).first()
     if not video:
+        logger.error(f"_publish_post: Video {post.video_id} not found")
         post.mark_failed("Video not found")
         db.commit()
         return {"success": False, "error": "Video not found"}
+    
+    logger.info(f"_publish_post: Video found - title='{video.title}', status={video.status}, url={video.video_url[:100] if video.video_url else 'None'}...")
     
     # Get the social account linked to this post
     account = db.query(SocialAccount).filter(
@@ -146,17 +154,23 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
     ).first()
     
     if not account:
+        logger.error(f"_publish_post: Social account {post.social_account_id} not found")
         post.mark_failed("Social account not found")
         db.commit()
         return {"success": False, "error": "Social account not found"}
+    
+    logger.info(f"_publish_post: Social account found - platform={account.platform}, username={account.username}, status={account.status}")
     
     # Get access token
     access_token = oauth_service.get_access_token(account)
     
     if not access_token:
+        logger.error(f"_publish_post: Failed to get access token for account {account.id}")
         post.mark_failed("Failed to get access token")
         db.commit()
         return {"success": False, "error": "Failed to get access token"}
+    
+    logger.info(f"_publish_post: Access token retrieved (length={len(access_token)})")
     
     # Get platform-specific overrides from platform_config
     platform_overrides = post.platform_config or {}
@@ -172,15 +186,22 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
         platform_overrides=platform_overrides,
     )
     
+    logger.info(f"_publish_post: PublishRequest created - title='{request.title}', hashtags={len(request.hashtags)}, video_path={request.video_path[:100] if request.video_path else 'None'}...")
+    
     # Get publisher and publish
     try:
         platform_enum = SocialPlatform(post.platform)
         publisher = get_publisher(platform_enum)
+        logger.info(f"_publish_post: Got publisher for {platform_enum}")
+        
+        logger.info(f"_publish_post: Starting publish to {post.platform}...")
         result = await publisher.publish(request)
+        logger.info(f"_publish_post: Publish completed - success={result.success}, post_id={result.post_id}, error={result.error}")
         
         if result.success:
             post.mark_published(result.post_id, result.post_url)
             db.commit()
+            logger.info(f"_publish_post: Post marked as published, post_url={result.post_url}")
             
             # Schedule analytics sync after 1 hour (to allow metrics to accumulate)
             # This is queued with a delay in production
@@ -198,6 +219,7 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
                 "post_url": result.post_url,
             }
         else:
+            logger.error(f"_publish_post: Publisher returned failure - {result.error}")
             post.mark_failed(result.error)
             db.commit()
             return {
@@ -208,7 +230,7 @@ async def _publish_post(db: Session, post: Post) -> Dict[str, Any]:
             }
             
     except Exception as e:
-        logger.exception(f"Error publishing to {post.platform}")
+        logger.exception(f"_publish_post: Exception publishing to {post.platform}: {e}")
         post.mark_failed(str(e))
         db.commit()
         return {

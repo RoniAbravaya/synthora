@@ -441,4 +441,7 @@ def _post_to_response(post: Post) -> PostResponse:
         published_at=post.published_at,
         created_at=post.created_at,
         updated_at=post.updated_at,
+        error_message=post.error_message,
+        post_url=post.post_url,
+        platform_post_id=post.platform_post_id,
     )

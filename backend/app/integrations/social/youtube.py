@@ -239,13 +239,18 @@ class YouTubeClient(BaseSocialClient):
         import tempfile
         import json
         
+        logger.info(f"=== YOUTUBE UPLOAD STARTED ===")
+        logger.info(f"Title: {title}, Privacy: {privacy_status}, Tags: {tags}")
+        logger.info(f"Video path: {video_path[:150] if video_path else 'None'}...")
+        logger.info(f"Access token length: {len(access_token) if access_token else 0}")
+        
         try:
             video_data = None
             video_filename = "video.mp4"
             
             # Check if video_path is a URL
             if video_path.startswith("http://") or video_path.startswith("https://"):
-                logger.info(f"Downloading video from URL: {video_path[:100]}...")
+                logger.info(f"Downloading video from URL...")
                 # Download video from URL
                 try:
                     download_response = await self.client.get(
@@ -253,6 +258,7 @@ class YouTubeClient(BaseSocialClient):
                         timeout=300.0,  # 5 minutes for large videos
                     )
                     if download_response.status_code != 200:
+                        logger.error(f"Download failed: HTTP {download_response.status_code}")
                         return PostResult(
                             success=False,
                             error=f"Failed to download video: HTTP {download_response.status_code}",
@@ -260,21 +266,24 @@ class YouTubeClient(BaseSocialClient):
                     video_data = download_response.content
                     logger.info(f"Downloaded video: {len(video_data)} bytes")
                 except Exception as e:
-                    logger.error(f"Error downloading video: {e}")
+                    logger.exception(f"Error downloading video: {e}")
                     return PostResult(success=False, error=f"Failed to download video: {str(e)}")
             else:
                 # Read from local file
                 if not os.path.exists(video_path):
+                    logger.error(f"Video file not found at path: {video_path}")
                     return PostResult(success=False, error="Video file not found")
                 
                 with open(video_path, "rb") as f:
                     video_data = f.read()
                 video_filename = os.path.basename(video_path)
+                logger.info(f"Read video from local file: {len(video_data)} bytes")
             
             if not video_data:
+                logger.error("No video data to upload")
                 return PostResult(success=False, error="No video data to upload")
             
-            logger.info(f"Uploading video to YouTube: {title}")
+            logger.info(f"Uploading {len(video_data)} bytes to YouTube...")
             
             # Create video metadata
             metadata = {
@@ -305,10 +314,11 @@ class YouTubeClient(BaseSocialClient):
             )
             
             if init_response.status_code != 200:
-                logger.error(f"YouTube upload init failed: {init_response.status_code} - {init_response.text}")
+                logger.error(f"YouTube upload init failed: {init_response.status_code}")
+                logger.error(f"Response: {init_response.text[:500] if init_response.text else 'No response body'}")
                 return PostResult(
                     success=False,
-                    error=f"Upload initialization failed: {init_response.text}",
+                    error=f"Upload initialization failed: HTTP {init_response.status_code} - {init_response.text[:200] if init_response.text else 'Unknown error'}",
                 )
             
             # Get the upload URL from the Location header

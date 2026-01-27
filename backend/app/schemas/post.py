@@ -77,6 +77,11 @@ class PostResponse(IDSchema, TimestampSchema):
     status: PostStatus
     scheduled_at: Optional[datetime] = None
     published_at: Optional[datetime] = None
+    
+    # Error info for failed posts
+    error_message: Optional[str] = None
+    post_url: Optional[str] = None
+    platform_post_id: Optional[str] = None
 
 
 class PostListResponse(BaseSchema):

@@ -299,6 +299,9 @@ class SocialOAuthService:
         Returns:
             True if refresh succeeded
         """
+        import asyncio
+        import concurrent.futures
+        
         if not account.refresh_token_encrypted:
             logger.warning(f"No refresh token for account {account.id}")
             account.status = "expired"
@@ -312,9 +315,26 @@ class SocialOAuthService:
             client = get_platform_client(account.platform)
             refresh_token = decrypt_value(account.refresh_token_encrypted)
             
-            new_tokens = client.refresh_access_token(refresh_token)
+            # The refresh_access_token method is async
+            # Run it in a separate thread with its own event loop to avoid conflicts
+            async def do_refresh():
+                return await client.refresh_access_token(refresh_token=refresh_token)
+            
+            def run_in_thread():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(do_refresh())
+                finally:
+                    loop.close()
+            
+            # Use a thread pool to run the async code
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_in_thread)
+                new_tokens = future.result(timeout=60)  # 60 second timeout
             
             if not new_tokens:
+                logger.warning(f"Token refresh returned no tokens for account {account.id}")
                 account.status = "expired"
                 self.db.commit()
                 return False
