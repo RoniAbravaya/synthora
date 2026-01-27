@@ -294,27 +294,33 @@ class AdminService:
         annual_count = subscriptions_by_plan.get(SubscriptionPlan.ANNUAL, 0)
         mrr = (monthly_count * 5.0) + (annual_count * (50.0 / 12))
         
+        def _get_enum_value(val):
+            """Helper to safely get enum value or return string as-is."""
+            if val is None:
+                return "none"
+            return val if isinstance(val, str) else val.value
+        
         return {
             "users": {
                 "total": total_users,
                 "active": active_users,
                 "new_30d": new_users_30d,
                 "by_role": {
-                    role.value if role else "none": count
+                    _get_enum_value(role): count
                     for role, count in users_by_role.items()
                 },
             },
             "videos": {
                 "total": total_videos,
                 "by_status": {
-                    status.value if status else "none": count
+                    _get_enum_value(status): count
                     for status, count in videos_by_status.items()
                 },
             },
             "posts": {
                 "total": total_posts,
                 "by_status": {
-                    status.value if status else "none": count
+                    _get_enum_value(status): count
                     for status, count in posts_by_status.items()
                 },
             },
@@ -322,7 +328,7 @@ class AdminService:
                 "total": total_subscriptions,
                 "active": active_subscriptions,
                 "by_plan": {
-                    plan.value if plan else "none": count
+                    _get_enum_value(plan): count
                     for plan, count in subscriptions_by_plan.items()
                 },
                 "mrr": round(mrr, 2),
@@ -421,7 +427,7 @@ class AdminService:
                 "user_id": str(user.id),
                 "email": user.email,
                 "display_name": user.display_name,
-                "role": user.role.value,
+                "role": user.role if isinstance(user.role, str) else user.role.value,
                 "count": count,
             }
             for user, count in results
@@ -455,7 +461,7 @@ class AdminService:
         Args:
             key: Setting key
             value: Setting value
-            description: Optional description
+            description: Optional description (not stored, kept for API compatibility)
             
         Returns:
             Updated or created setting
@@ -466,13 +472,10 @@ class AdminService:
         
         if setting:
             setting.value = value
-            if description:
-                setting.description = description
         else:
             setting = AppSettings(
                 key=key,
                 value=value,
-                description=description,
             )
             self.db.add(setting)
         

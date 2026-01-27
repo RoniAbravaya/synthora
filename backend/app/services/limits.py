@@ -221,7 +221,7 @@ class LimitsService:
         daily_limit = limits.get("daily_videos")
         
         return {
-            "role": user.role.value,
+            "role": user.role if isinstance(user.role, str) else user.role.value,
             "limits": {
                 "daily_videos": daily_limit,
                 "ai_suggestions": limits.get("ai_suggestions", False),

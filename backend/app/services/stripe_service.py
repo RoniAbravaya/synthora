@@ -228,8 +228,8 @@ class StripeService:
         
         return {
             "id": str(subscription.id),
-            "status": subscription.status.value,
-            "plan": subscription.plan.value if subscription.plan else None,
+            "status": subscription.status if isinstance(subscription.status, str) else subscription.status.value,
+            "plan": (subscription.plan if isinstance(subscription.plan, str) else subscription.plan.value) if subscription.plan else None,
             "current_period_start": subscription.current_period_start,
             "current_period_end": subscription.current_period_end,
             "cancel_at_period_end": subscription.cancel_at_period_end,

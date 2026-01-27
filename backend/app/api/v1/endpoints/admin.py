@@ -95,7 +95,7 @@ async def list_users(
                 id=u.id,
                 email=u.email,
                 display_name=u.display_name,
-                role=u.role.value,
+                role=u.role if isinstance(u.role, str) else u.role.value,
                 is_active=u.is_active,
                 created_at=u.created_at,
                 last_login=u.last_login,
@@ -135,13 +135,13 @@ async def get_user_details(
         email=user.email,
         display_name=user.display_name,
         photo_url=user.photo_url,
-        role=user.role.value,
+        role=user.role if isinstance(user.role, str) else user.role.value,
         is_active=user.is_active,
         created_at=user.created_at,
         updated_at=user.updated_at,
         last_login=user.last_login,
-        subscription_status=subscription.status.value if subscription else None,
-        subscription_plan=subscription.plan.value if subscription and subscription.plan else None,
+        subscription_status=(subscription.status if isinstance(subscription.status, str) else subscription.status.value) if subscription else None,
+        subscription_plan=(subscription.plan if isinstance(subscription.plan, str) else subscription.plan.value) if subscription and subscription.plan else None,
         stats=AdminUserStats(**result["stats"]),
     )
 
@@ -447,7 +447,7 @@ async def get_recent_videos(
             RecentVideoItem(
                 id=v.id,
                 title=v.title,
-                status=v.status.value,
+                status=v.status if isinstance(v.status, str) else v.status.value,
                 user_id=v.user_id,
                 user_email=user_map.get(v.user_id),
                 created_at=v.created_at,
@@ -479,7 +479,7 @@ async def get_recent_posts(
             RecentPostItem(
                 id=p.id,
                 title=p.title,
-                status=p.status.value,
+                status=p.status if isinstance(p.status, str) else p.status.value,
                 platforms=p.platforms or [],
                 user_id=p.user_id,
                 user_email=user_map.get(p.user_id),
