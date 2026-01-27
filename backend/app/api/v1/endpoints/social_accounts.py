@@ -609,7 +609,12 @@ async def disconnect_account(
 ):
     """
     Disconnect a social account.
+    
+    This will also remove any posts and analytics associated with this account.
     """
+    from app.models.post import Post
+    from app.models.analytics import Analytics
+    
     account = db.query(SocialAccount).filter(
         SocialAccount.id == account_id
     ).first()
@@ -629,12 +634,33 @@ async def disconnect_account(
     platform = account.platform
     username = account.username
     
-    db.delete(account)
-    db.commit()
-    
-    return {
-        "message": f"Disconnected {platform} account: {username}"
-    }
+    try:
+        # Get all post IDs for this social account
+        post_ids = [p.id for p in db.query(Post.id).filter(Post.social_account_id == account_id).all()]
+        
+        if post_ids:
+            # Delete analytics for these posts first
+            db.query(Analytics).filter(Analytics.post_id.in_(post_ids)).delete(synchronize_session=False)
+            
+            # Delete the posts
+            db.query(Post).filter(Post.social_account_id == account_id).delete(synchronize_session=False)
+        
+        # Now delete the social account
+        db.delete(account)
+        db.commit()
+        
+        logger.info(f"User {user.id} disconnected {platform} account: {username}")
+        
+        return {
+            "message": f"Disconnected {platform} account: {username}"
+        }
+    except Exception as e:
+        db.rollback()
+        logger.exception(f"Failed to disconnect social account {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to disconnect account: {str(e)}",
+        )
 
 
 # =============================================================================
