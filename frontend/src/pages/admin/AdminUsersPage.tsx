@@ -628,7 +628,13 @@ export default function AdminUsersPage() {
   const [grantPremiumUser, setGrantPremiumUser] = useState<UserItem | null>(null)
   const [deleteUser, setDeleteUser] = useState<UserItem | null>(null)
 
-  const { data, isLoading, refetch } = useAdminUsers(filters)
+  const { data, isLoading, error, refetch } = useAdminUsers(filters)
+
+  // Debug logging
+  console.log("AdminUsersPage - filters:", filters)
+  console.log("AdminUsersPage - data:", data)
+  console.log("AdminUsersPage - isLoading:", isLoading)
+  console.log("AdminUsersPage - error:", error)
 
   // Debounced search using useCallback
   const debouncedSearch = useCallback(
@@ -742,10 +748,20 @@ export default function AdminUsersPage() {
             <div className="flex h-64 items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
+          ) : error ? (
+            <div className="flex h-64 flex-col items-center justify-center text-red-500">
+              <XCircle className="mb-4 h-12 w-12" />
+              <p className="font-medium">Error loading users</p>
+              <p className="text-sm">{(error as Error).message}</p>
+              <Button variant="outline" className="mt-4" onClick={() => refetch()}>
+                Try Again
+              </Button>
+            </div>
           ) : users.length === 0 ? (
             <div className="flex h-64 flex-col items-center justify-center text-muted-foreground">
               <User className="mb-4 h-12 w-12" />
               <p>No users found</p>
+              <p className="text-sm">Total from API: {total}</p>
               {searchInput && (
                 <p className="text-sm">Try adjusting your search or filters</p>
               )}
