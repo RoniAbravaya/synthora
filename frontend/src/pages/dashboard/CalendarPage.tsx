@@ -384,13 +384,49 @@ export default function CalendarPage() {
   const [view, setView] = useState<"month" | "week">("month")
   const [currentDate, setCurrentDate] = useState(new Date())
 
-  // Fetch scheduled posts
-  const { data: postsData, isLoading } = useQuery({
-    queryKey: ["posts", "scheduled"],
-    queryFn: () => postsService.getScheduled(),
+  // Fetch scheduled posts for calendar view
+  const { data: calendarData, isLoading: calendarLoading } = useQuery({
+    queryKey: ["posts", "calendar", currentDate.getFullYear(), currentDate.getMonth()],
+    queryFn: () => postsService.getCalendar(currentDate.getFullYear(), currentDate.getMonth() + 1),
   })
 
-  const posts: ScheduledPost[] = postsData?.posts || []
+  // Fetch upcoming posts for sidebar
+  const { data: upcomingData, isLoading: upcomingLoading } = useQuery({
+    queryKey: ["posts", "upcoming"],
+    queryFn: () => postsService.getUpcoming(10),
+  })
+
+  // Combine and normalize the data
+  const posts: ScheduledPost[] = useMemo(() => {
+    const calendarPosts = (calendarData?.posts || []).map((p) => ({
+      id: p.id,
+      title: p.title || "Untitled",
+      platform: p.platforms?.[0] || "unknown",
+      scheduled_at: p.scheduled_at,
+      status: p.status,
+      video_id: "",
+    }))
+    
+    const upcoming = (upcomingData?.posts || []).map((p) => ({
+      id: p.id,
+      title: p.title || "Untitled",
+      platform: p.platforms?.[0] || "unknown",
+      scheduled_at: p.scheduled_at || "",
+      status: p.status,
+      video_id: p.video_id,
+    }))
+
+    // Merge and dedupe by id
+    const allPosts = [...calendarPosts]
+    for (const up of upcoming) {
+      if (!allPosts.find((p) => p.id === up.id)) {
+        allPosts.push(up)
+      }
+    }
+    return allPosts
+  }, [calendarData, upcomingData])
+
+  const isLoading = calendarLoading || upcomingLoading
 
   // Navigation handlers
   const navigatePrev = () => {
