@@ -511,4 +511,13 @@ def _video_to_response(video: Video) -> VideoResponse:
         expires_at=video.expires_at,
         created_at=video.created_at,
         updated_at=video.updated_at,
+        # Planning fields
+        planning_status=video.planning_status,
+        scheduled_post_time=video.scheduled_post_time,
+        generation_triggered_at=video.generation_triggered_at,
+        posted_at=video.posted_at,
+        series_name=video.series_name,
+        series_order=video.series_order,
+        target_platforms=video.target_platforms,
+        ai_suggestion_data=video.ai_suggestion_data,
     )

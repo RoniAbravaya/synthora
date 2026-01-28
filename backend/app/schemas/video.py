@@ -124,6 +124,16 @@ class VideoResponse(IDSchema, TimestampSchema):
     
     error_message: Optional[str] = None
     expires_at: Optional[datetime] = None
+    
+    # Planning fields (for scheduled/AI-generated videos)
+    planning_status: Optional[str] = Field(default=None, description="Planning status: none, planned, generating, ready, posting, posted, failed")
+    scheduled_post_time: Optional[datetime] = Field(default=None, description="When the video should be posted")
+    generation_triggered_at: Optional[datetime] = Field(default=None, description="When generation was triggered")
+    posted_at: Optional[datetime] = Field(default=None, description="When the video was posted")
+    series_name: Optional[str] = Field(default=None, description="Series name if part of a series")
+    series_order: Optional[int] = Field(default=None, description="Order in the series")
+    target_platforms: Optional[List[str]] = Field(default=None, description="Target platforms for posting")
+    ai_suggestion_data: Optional[Dict[str, Any]] = Field(default=None, description="AI suggestion data")
 
 
 class VideoListItem(IDSchema):
