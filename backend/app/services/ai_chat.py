@@ -256,13 +256,38 @@ CRITICAL RULES FOR SERIES AND PLANS:
 
 3. ALWAYS include your clarifying questions DIRECTLY in the "message" field - don't just say "let's get details", actually ask the specific questions!
 
-4. Include action_cards ONLY when you have ALL the information needed:
-   - type "single_video": Include full suggestion data for one video
-   - type "series": Include array of video suggestions with schedule (ONLY after user answers your questions)
-   - type "monthly_plan": Include full plan with videos and schedule
-   - type "schedule": Include suggestion and proposed schedule time
+4. Include action_cards ONLY when you have ALL the information needed.
 
-5. For action card data, include complete suggestion information like:
+5. ACTION CARD DATA STRUCTURE (IMPORTANT):
+
+   For type "series", data MUST be a dictionary with this structure:
+   {{
+       "type": "series",
+       "title": "Series Title",
+       "description": "Series description",
+       "data": {{
+           "series_name": "The series title",
+           "tone": "Overall tone",
+           "visual_style": "Visual style description",
+           "target_audience": "Who this is for",
+           "recommended_platforms": ["tiktok", "youtube", "instagram"],
+           "parts": [
+               {{
+                   "title": "Part 1: Title",
+                   "description": "What this part covers",
+                   "hook": "Opening hook",
+                   "script_outline": "Brief outline",
+                   "estimated_duration_seconds": 60
+               }},
+               {{
+                   "title": "Part 2: Title",
+                   ...
+               }}
+           ]
+       }}
+   }}
+
+   For type "single_video", data should include:
    - title, description, hook, script_outline
    - hashtags, estimated_duration_seconds
    - visual_style, tone, target_audience
@@ -286,11 +311,25 @@ Do NOT just say "Let's get some details" - actually ASK the details!"""
             
             action_cards = []
             for card_data in content.get("action_cards", []):
+                # Handle when AI returns data as a list (e.g., parts array directly)
+                raw_data = card_data.get("data", {})
+                if isinstance(raw_data, list):
+                    # If data is a list, wrap it in a proper dict
+                    card_type = card_data.get("type", "single_video")
+                    if card_type == "series":
+                        raw_data = {"parts": raw_data}
+                    elif card_type == "monthly_plan":
+                        raw_data = {"videos": raw_data}
+                    else:
+                        raw_data = {"items": raw_data}
+                elif not isinstance(raw_data, dict):
+                    raw_data = {}
+                
                 action_cards.append(ActionCard(
                     type=card_data.get("type", "single_video"),
                     title=card_data.get("title", ""),
                     description=card_data.get("description", ""),
-                    data=card_data.get("data", {}),
+                    data=raw_data,
                 ))
             
             return ChatMessageResponse(

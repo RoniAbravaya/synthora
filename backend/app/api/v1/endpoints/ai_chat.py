@@ -295,18 +295,77 @@ async def execute_action(
         
         elif request.action_type == "series":
             # Create a video series
+            # Handle different formats the AI might return
+            action_data = request.action_data
+            
+            # Get series name from different possible locations
+            series_name = (
+                action_data.get("series_name") or 
+                action_data.get("title") or 
+                "Untitled Series"
+            )
+            
+            # Get videos/parts - AI may use "parts" or "videos"
+            videos_data = (
+                action_data.get("videos") or 
+                action_data.get("parts") or 
+                []
+            )
+            
+            # Transform parts format to videos format if needed
+            transformed_videos = []
+            for i, part in enumerate(videos_data):
+                video_data = {
+                    "title": part.get("title", f"Part {i + 1}"),
+                    "description": part.get("description", ""),
+                    "hook": part.get("hook", ""),
+                    "script_outline": part.get("script_outline", ""),
+                    "estimated_duration_seconds": part.get("estimated_duration_seconds", 60),
+                    "visual_style": action_data.get("visual_style", part.get("visual_style", "")),
+                    "tone": action_data.get("tone", part.get("tone", "")),
+                    "hashtags": action_data.get("hashtags", part.get("hashtags", [])),
+                    "target_audience": action_data.get("target_audience", part.get("target_audience", "")),
+                    "recommended_platforms": action_data.get("recommended_platforms", part.get("recommended_platforms", [])),
+                }
+                transformed_videos.append(video_data)
+            
+            # Get schedule - if not provided, create default schedule
+            schedule = action_data.get("schedule", [])
+            if not schedule and transformed_videos:
+                # Create a default schedule - 1 video per day starting tomorrow
+                from datetime import datetime, timedelta, timezone
+                start_date = datetime.now(timezone.utc) + timedelta(days=1)
+                schedule = []
+                for i in range(len(transformed_videos)):
+                    post_time = start_date + timedelta(days=i)
+                    # Set time to 10:00 AM
+                    post_time = post_time.replace(hour=10, minute=0, second=0, microsecond=0)
+                    schedule.append({
+                        "video_index": i,
+                        "scheduled_time": post_time.isoformat(),
+                    })
+            
+            # Get target platforms
+            target_platforms = (
+                request.target_platforms or 
+                action_data.get("target_platforms") or 
+                action_data.get("recommended_platforms") or 
+                ["youtube", "tiktok", "instagram"]
+            )
+            
             videos = await planning_service.create_series(
                 user_id=current_user.id,
-                series_name=request.action_data.get("series_name"),
-                videos=request.action_data.get("videos", []),
-                schedule=request.action_data.get("schedule", []),
-                target_platforms=request.target_platforms or request.action_data.get("target_platforms", []),
+                series_name=series_name,
+                videos=transformed_videos,
+                schedule=schedule,
+                target_platforms=target_platforms,
             )
             
             return ExecuteActionResponse(
                 success=True,
-                message=f"Series created with {len(videos)} videos",
+                message=f"Series '{series_name}' created with {len(videos)} videos",
                 created_video_ids=[v.id for v in videos],
+                redirect_url="/calendar",
             )
         
         elif request.action_type == "monthly_plan":
