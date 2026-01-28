@@ -15,4 +15,5 @@ export * from "./notifications"
 export * from "./admin"
 export * from "./aiChat"
 export * from "./videoPlanning"
+export * from "./generationSettings"
 

@@ -4,7 +4,8 @@
  * User settings, subscription management, and preferences.
  */
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   User,
   CreditCard,
@@ -18,6 +19,9 @@ import {
   ExternalLink,
   Calendar,
   AlertCircle,
+  Video,
+  DollarSign,
+  Info,
 } from "lucide-react"
 import { cn, formatDate, formatCurrency } from "@/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
@@ -46,7 +50,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import type { SubscriptionPlan } from "@/types"
+import {
+  generationSettingsService,
+  type UserGenerationSettings,
+  type UserGenerationSettingsUpdate,
+  type AvailableProvidersResponse,
+  type CostEstimateResponse,
+} from "@/services/generationSettings"
 
 // =============================================================================
 // Profile Tab
@@ -524,6 +548,253 @@ function NotificationsTab() {
 }
 
 // =============================================================================
+// Video Generation Tab
+// =============================================================================
+
+function VideoGenerationTab() {
+  const queryClient = useQueryClient()
+  
+  // Queries
+  const { data: settings, isLoading: settingsLoading } = useQuery({
+    queryKey: ["generationSettings"],
+    queryFn: generationSettingsService.get,
+  })
+  
+  const { data: availableProviders, isLoading: providersLoading } = useQuery({
+    queryKey: ["availableProviders"],
+    queryFn: generationSettingsService.getAvailableProviders,
+  })
+  
+  const { data: costEstimate, isLoading: costLoading } = useQuery({
+    queryKey: ["costEstimate"],
+    queryFn: generationSettingsService.getCostEstimate,
+  })
+  
+  // Mutation
+  const updateMutation = useMutation({
+    mutationFn: (updates: UserGenerationSettingsUpdate) =>
+      generationSettingsService.update(updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["generationSettings"] })
+      queryClient.invalidateQueries({ queryKey: ["costEstimate"] })
+    },
+  })
+  
+  const handleProviderChange = (category: string, value: string) => {
+    const key = `default_${category}_provider` as keyof UserGenerationSettingsUpdate
+    updateMutation.mutate({ [key]: value === "auto" ? null : value })
+  }
+  
+  const handleSubtitleStyleChange = (value: string) => {
+    updateMutation.mutate({ subtitle_style: value })
+  }
+  
+  if (settingsLoading || providersLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+  
+  const categories = [
+    { key: "script", label: "Script Generation", description: "AI model for generating video scripts" },
+    { key: "voice", label: "Voice Generation", description: "Text-to-speech provider" },
+    { key: "media", label: "Stock Media", description: "Source for stock videos and images" },
+    { key: "video_ai", label: "AI Video Generation", description: "AI-generated video clips (optional)" },
+    { key: "assembly", label: "Video Assembly", description: "Video processing engine" },
+  ]
+  
+  const getProvidersForCategory = (category: string) => {
+    if (!availableProviders) return []
+    return availableProviders.providers[category as keyof typeof availableProviders.providers] || []
+  }
+  
+  const getCurrentValue = (category: string) => {
+    if (!settings) return "auto"
+    const key = `default_${category}_provider` as keyof UserGenerationSettings
+    return settings[key] || "auto"
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Provider Selection */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Video className="h-5 w-5" />
+            Default Providers
+          </CardTitle>
+          <CardDescription>
+            Choose default AI providers for each step of video generation.
+            If not set, the first available provider will be used.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {categories.map((cat) => {
+            const providers = getProvidersForCategory(cat.key)
+            const currentValue = getCurrentValue(cat.key)
+            
+            return (
+              <div key={cat.key} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm font-medium">{cat.label}</Label>
+                    <p className="text-xs text-muted-foreground">{cat.description}</p>
+                  </div>
+                  <Select
+                    value={currentValue}
+                    onValueChange={(v) => handleProviderChange(cat.key, v)}
+                    disabled={updateMutation.isPending || providers.length === 0}
+                  >
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue placeholder="Select provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">
+                        <span className="flex items-center gap-2">
+                          <Sparkles className="h-4 w-4" />
+                          Auto (First Available)
+                        </span>
+                      </SelectItem>
+                      {providers.map((p) => (
+                        <SelectItem
+                          key={p.provider}
+                          value={p.provider}
+                          disabled={!p.is_valid}
+                        >
+                          <span className="flex items-center gap-2">
+                            {p.display_name}
+                            {!p.is_valid && (
+                              <span className="text-xs text-muted-foreground">(Not configured)</span>
+                            )}
+                            {p.estimated_cost > 0 && (
+                              <span className="text-xs text-muted-foreground">
+                                ~${p.estimated_cost.toFixed(3)}
+                              </span>
+                            )}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {providers.length === 0 && (
+                  <p className="text-xs text-amber-500">
+                    No providers configured. Set up integrations first.
+                  </p>
+                )}
+              </div>
+            )
+          })}
+        </CardContent>
+      </Card>
+
+      {/* Subtitle Style */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Subtitle Style</CardTitle>
+          <CardDescription>
+            Choose how subtitles appear on your videos
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-4">
+            {availableProviders?.subtitle_styles.map((style) => (
+              <button
+                key={style.name}
+                className={cn(
+                  "flex flex-col items-center gap-2 rounded-lg border p-4 transition-all hover:border-primary",
+                  settings?.subtitle_style === style.name && "border-primary bg-primary/5"
+                )}
+                onClick={() => handleSubtitleStyleChange(style.name)}
+                disabled={updateMutation.isPending}
+              >
+                <div
+                  className={cn(
+                    "flex h-12 w-full items-center justify-center rounded text-sm font-medium",
+                    style.name === "classic" && "bg-black text-white",
+                    style.name === "modern" && "bg-black/80 text-white rounded-sm",
+                    style.name === "bold" && "bg-yellow-400 text-black font-bold",
+                    style.name === "minimal" && "text-white drop-shadow-lg"
+                  )}
+                  style={style.name === "minimal" ? { textShadow: "2px 2px 4px black" } : undefined}
+                >
+                  Sample Text
+                </div>
+                <span className="text-sm font-medium">{style.display_name}</span>
+                <span className="text-xs text-muted-foreground text-center">{style.description}</span>
+                {settings?.subtitle_style === style.name && (
+                  <Check className="h-4 w-4 text-primary" />
+                )}
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Cost Estimate */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="h-5 w-5" />
+            Estimated Cost per Video
+          </CardTitle>
+          <CardDescription>
+            Based on your selected providers (actual cost may vary)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {costLoading ? (
+            <Loader2 className="h-6 w-6 animate-spin" />
+          ) : costEstimate ? (
+            <div className="space-y-4">
+              <div className="grid gap-2">
+                {costEstimate.breakdown.map((item, i) => (
+                  <div key={i} className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="capitalize">{item.category}</span>
+                      <span className="text-muted-foreground">
+                        ({item.provider_name})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono">${item.cost.toFixed(4)}</span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Info className="h-3 w-3 text-muted-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{item.description}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between font-medium">
+                <span>Total Estimated Cost</span>
+                <span className="text-lg font-mono text-primary">
+                  ${costEstimate.total_cost.toFixed(2)} {costEstimate.currency}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {costEstimate.assumptions}
+              </p>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">Unable to calculate cost estimate</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// =============================================================================
 // Main Page Component
 // =============================================================================
 
@@ -538,7 +809,7 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             Profile
@@ -546,6 +817,10 @@ export default function SettingsPage() {
           <TabsTrigger value="subscription" className="gap-2">
             <CreditCard className="h-4 w-4" />
             Subscription
+          </TabsTrigger>
+          <TabsTrigger value="video-generation" className="gap-2">
+            <Video className="h-4 w-4" />
+            Video Generation
           </TabsTrigger>
           <TabsTrigger value="appearance" className="gap-2">
             <Palette className="h-4 w-4" />
@@ -563,6 +838,10 @@ export default function SettingsPage() {
 
         <TabsContent value="subscription">
           <SubscriptionTab />
+        </TabsContent>
+
+        <TabsContent value="video-generation">
+          <VideoGenerationTab />
         </TabsContent>
 
         <TabsContent value="appearance">

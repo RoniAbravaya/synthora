@@ -42,6 +42,41 @@ export interface SwapIntegrationRequest {
   new_provider: string
 }
 
+// New video action types
+export interface GenerateNowResponse {
+  success: boolean
+  video_id: string
+  message: string
+  job_id: string | null
+}
+
+export interface CancelVideoResponse {
+  success: boolean
+  video_id: string
+  message: string
+}
+
+export interface RescheduleVideoResponse {
+  success: boolean
+  video_id: string
+  new_scheduled_time: string
+  message: string
+}
+
+export interface EditVideoRequest {
+  title?: string
+  prompt?: string
+  template_id?: string
+  target_platforms?: string[]
+}
+
+export interface ScheduledVideoListResponse {
+  videos: Video[]
+  total: number
+  skip: number
+  limit: number
+}
+
 export const videosService = {
   /**
    * Get user's videos.
@@ -104,5 +139,43 @@ export const videosService = {
    */
   getDownloadUrl: (id: string) =>
     apiClient.get<{ url: string; expires_at: string }>(`/videos/${id}/download`),
+
+  // ==========================================================================
+  // New Video Actions
+  // ==========================================================================
+
+  /**
+   * Get list of scheduled/planned videos.
+   */
+  listScheduled: (params?: { limit?: number; skip?: number }) =>
+    apiClient.get<ScheduledVideoListResponse>("/videos/scheduled", { params }),
+
+  /**
+   * Trigger immediate generation for a scheduled video.
+   */
+  generateNow: (id: string) =>
+    apiClient.post<GenerateNowResponse>(`/videos/${id}/generate-now`),
+
+  /**
+   * Cancel a video generation in progress.
+   */
+  cancel: (id: string) =>
+    apiClient.post<CancelVideoResponse>(`/videos/${id}/cancel`),
+
+  /**
+   * Reschedule a planned video.
+   */
+  reschedule: (id: string, scheduledPostTime: string) =>
+    apiClient.put<RescheduleVideoResponse>(`/videos/${id}/reschedule`, null, {
+      params: { scheduled_post_time: scheduledPostTime },
+    }),
+
+  /**
+   * Edit a planned video's details.
+   */
+  edit: (id: string, data: EditVideoRequest) =>
+    apiClient.put<Video>(`/videos/${id}/edit`, null, {
+      params: data,
+    }),
 }
 
