@@ -9,7 +9,7 @@ import logging
 import json
 from typing import Optional, Dict, Any, Tuple
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -97,7 +97,14 @@ class AISuggestionGenerator:
         
         days_history = 0
         if earliest_post and earliest_post.published_at:
-            days_history = (datetime.utcnow() - earliest_post.published_at).days
+            # Use timezone-aware datetime to match PostgreSQL's timezone-aware timestamps
+            now = datetime.now(timezone.utc)
+            # Handle both timezone-aware and naive datetimes from database
+            published_at = earliest_post.published_at
+            if published_at.tzinfo is None:
+                # If naive, assume UTC
+                published_at = published_at.replace(tzinfo=timezone.utc)
+            days_history = (now - published_at).days
         
         # Sum total engagement (views + likes + shares)
         total_engagement = self.db.query(
