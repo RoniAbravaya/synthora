@@ -25,7 +25,7 @@ class AdminUserItem(BaseSchema):
     display_name: Optional[str] = None
     role: str
     is_active: bool
-    created_at: datetime
+    created_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
 
 
