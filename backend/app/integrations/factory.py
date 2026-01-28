@@ -18,33 +18,28 @@ from app.integrations.validators import (
     UnsplashValidator,
     PixabayValidator,
     RunwayValidator,
-    HeyGenValidator,
     SoraValidator,
     VeoValidator,
     LumaValidator,
-    ImagineArtValidator,
     PixVerseValidator,
-    SeedanceValidator,
-    WanValidator,
     HailuoValidator,
-    LTXValidator,
     FFmpegValidator,
     CreatomateValidator,
     ShotstackValidator,
-    RemotionValidator,
-    EditframeValidator,
 )
 
 logger = logging.getLogger(__name__)
 
 
 # Mapping of providers to their validator classes
+# Updated to match the modular IntegrationProvider enum
 VALIDATOR_MAP: dict[IntegrationProvider, Type[BaseValidator]] = {
     # Script/Text AI
-    IntegrationProvider.OPENAI: OpenAIValidator,
+    IntegrationProvider.OPENAI_GPT: OpenAIValidator,
     IntegrationProvider.ANTHROPIC: AnthropicValidator,
     
     # Voice AI
+    IntegrationProvider.OPENAI_TTS: OpenAIValidator,  # Uses same validator as GPT
     IntegrationProvider.ELEVENLABS: ElevenLabsValidator,
     IntegrationProvider.PLAYHT: PlayHTValidator,
     
@@ -54,24 +49,19 @@ VALIDATOR_MAP: dict[IntegrationProvider, Type[BaseValidator]] = {
     IntegrationProvider.PIXABAY: PixabayValidator,
     
     # Video AI
+    IntegrationProvider.OPENAI_SORA: SoraValidator,
     IntegrationProvider.RUNWAY: RunwayValidator,
-    IntegrationProvider.HEYGEN: HeyGenValidator,
-    IntegrationProvider.SORA: SoraValidator,
     IntegrationProvider.VEO: VeoValidator,
     IntegrationProvider.LUMA: LumaValidator,
-    IntegrationProvider.IMAGINEART: ImagineArtValidator,
+    IntegrationProvider.KLING: RunwayValidator,  # Placeholder
+    IntegrationProvider.MINIMAX: RunwayValidator,  # Placeholder
     IntegrationProvider.PIXVERSE: PixVerseValidator,
-    IntegrationProvider.SEEDANCE: SeedanceValidator,
-    IntegrationProvider.WAN: WanValidator,
     IntegrationProvider.HAILUO: HailuoValidator,
-    IntegrationProvider.LTX: LTXValidator,
     
     # Video Assembly
     IntegrationProvider.FFMPEG: FFmpegValidator,
     IntegrationProvider.CREATOMATE: CreatomateValidator,
     IntegrationProvider.SHOTSTACK: ShotstackValidator,
-    IntegrationProvider.REMOTION: RemotionValidator,
-    IntegrationProvider.EDITFRAME: EditframeValidator,
 }
 
 
