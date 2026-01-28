@@ -140,14 +140,17 @@ export function useDeletePlannedVideo() {
 
 /**
  * Hook to trigger immediate generation for a planned video.
+ * Use force=true to reset a stuck "generating" video.
  */
 export function useTriggerGeneration() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (videoId: string) => videoPlanningService.triggerGeneration(videoId),
+    mutationFn: ({ videoId, force = false }: { videoId: string; force?: boolean }) =>
+      videoPlanningService.triggerGeneration(videoId, force),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: videoPlanningKeys.all })
+      queryClient.invalidateQueries({ queryKey: ["videos"] })
     },
   })
 }

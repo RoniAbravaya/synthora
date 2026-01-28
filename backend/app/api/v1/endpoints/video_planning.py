@@ -372,6 +372,7 @@ async def delete_planned_video(
 @router.post("/planned/{video_id}/generate-now", response_model=TriggerGenerationResponse)
 async def trigger_generation_now(
     video_id: UUID,
+    force: bool = Query(default=False, description="Force regeneration even if stuck in 'generating' status"),
     current_user: User = Depends(require_premium),
     db: Session = Depends(get_db),
 ):
@@ -380,6 +381,9 @@ async def trigger_generation_now(
     
     Useful if user wants to generate immediately rather than waiting
     for the scheduled generation time.
+    
+    If a video is stuck in 'generating' status for more than 30 minutes,
+    use force=True to reset and re-trigger generation.
     """
     video = db.query(Video).filter(
         Video.id == video_id,
@@ -392,10 +396,48 @@ async def trigger_generation_now(
             detail="Planned video not found",
         )
     
-    if video.planning_status != PlanningStatus.PLANNED.value:
+    # Allow generation for 'planned' status
+    if video.planning_status == PlanningStatus.PLANNED.value:
+        pass  # Allow generation
+    # Allow re-generation for 'generating' status if stuck for too long (30 min)
+    elif video.planning_status == PlanningStatus.GENERATING.value:
+        from datetime import timezone
+        stuck_threshold = timedelta(minutes=30)
+        now = datetime.now(timezone.utc)
+        
+        # Make generation_triggered_at timezone-aware if naive
+        triggered_at = video.generation_triggered_at
+        if triggered_at:
+            if triggered_at.tzinfo is None:
+                triggered_at = triggered_at.replace(tzinfo=timezone.utc)
+            
+            time_since_triggered = now - triggered_at
+            
+            if time_since_triggered < stuck_threshold and not force:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Video is currently being generated (started {int(time_since_triggered.total_seconds() / 60)} minutes ago). "
+                           f"If generation seems stuck, wait up to 30 minutes or use force=true to reset.",
+                )
+        
+        # Reset to planned status for re-generation
+        logger.info(f"Resetting stuck video {video_id} from 'generating' to 'planned' for re-generation")
+        video.planning_status = PlanningStatus.PLANNED.value
+        video.generation_triggered_at = None
+        video.status = "pending"
+        db.commit()
+    # Allow re-generation for 'failed' status
+    elif video.planning_status == PlanningStatus.FAILED.value:
+        logger.info(f"Re-generating failed video {video_id}")
+        video.planning_status = PlanningStatus.PLANNED.value
+        video.generation_triggered_at = None
+        video.status = "pending"
+        video.error_message = None
+        db.commit()
+    else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot generate video in '{video.planning_status}' status. Only 'planned' videos can be generated.",
+            detail=f"Cannot generate video in '{video.planning_status}' status. Only 'planned', 'generating' (if stuck), or 'failed' videos can be generated.",
         )
     
     service = VideoPlanningService(db)

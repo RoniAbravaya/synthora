@@ -200,13 +200,14 @@ export default function VideoDetailPage() {
     await retryMutation.mutateAsync(id)
   }
 
-  const handleGenerateNow = async () => {
+  const handleGenerateNow = async (force = false) => {
     if (!id) return
     try {
-      await triggerGenerationMutation.mutateAsync(id)
+      await triggerGenerationMutation.mutateAsync({ videoId: id, force })
       toast.success("Video generation started!")
-    } catch (error) {
-      toast.error("Failed to start generation")
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to start generation"
+      toast.error(errorMessage)
     }
   }
 
@@ -303,10 +304,10 @@ export default function VideoDetailPage() {
             </Link>
           </div>
         )}
-        {currentStatus === "pending" && (
+        {currentStatus === "pending" && video.planning_status !== "generating" && (
           <div className="flex gap-2">
             <Button 
-              onClick={handleGenerateNow}
+              onClick={() => handleGenerateNow(false)}
               disabled={triggerGenerationMutation.isPending}
               className="gap-2"
             >
@@ -316,6 +317,23 @@ export default function VideoDetailPage() {
                 <Play className="h-4 w-4" />
               )}
               Generate Now
+            </Button>
+          </div>
+        )}
+        {video.planning_status === "generating" && (
+          <div className="flex gap-2">
+            <Button 
+              variant="outline"
+              onClick={() => handleGenerateNow(true)}
+              disabled={triggerGenerationMutation.isPending}
+              className="gap-2"
+            >
+              {triggerGenerationMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Force Regenerate
             </Button>
           </div>
         )}
@@ -346,7 +364,31 @@ export default function VideoDetailPage() {
                   </div>
                 ) : currentStatus === "pending" ? (
                   <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-                    {video.planning_status === "planned" ? (
+                    {video.planning_status === "generating" ? (
+                      <>
+                        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                        <p className="mt-4 text-lg font-medium">Generating Video...</p>
+                        <p className="text-sm text-muted-foreground">
+                          This may take 5-15 minutes
+                        </p>
+                        <Button 
+                          variant="outline"
+                          className="mt-4 gap-2"
+                          onClick={() => handleGenerateNow(true)}
+                          disabled={triggerGenerationMutation.isPending}
+                        >
+                          {triggerGenerationMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-4 w-4" />
+                          )}
+                          Force Regenerate
+                        </Button>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Use this if generation seems stuck
+                        </p>
+                      </>
+                    ) : video.planning_status === "planned" ? (
                       <>
                         <Calendar className="h-12 w-12 text-primary/70" />
                         <p className="mt-4 text-lg font-medium">Scheduled Video</p>
@@ -358,7 +400,7 @@ export default function VideoDetailPage() {
                         </p>
                         <Button 
                           className="mt-4 gap-2"
-                          onClick={handleGenerateNow}
+                          onClick={() => handleGenerateNow(false)}
                           disabled={triggerGenerationMutation.isPending}
                         >
                           {triggerGenerationMutation.isPending ? (
@@ -526,10 +568,10 @@ export default function VideoDetailPage() {
               <CardTitle className="text-base">Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {currentStatus === "pending" && (
+              {currentStatus === "pending" && video.planning_status !== "generating" && (
                 <Button
                   className="w-full"
-                  onClick={handleGenerateNow}
+                  onClick={() => handleGenerateNow(false)}
                   disabled={triggerGenerationMutation.isPending}
                 >
                   {triggerGenerationMutation.isPending ? (
@@ -538,6 +580,21 @@ export default function VideoDetailPage() {
                     <Play className="mr-2 h-4 w-4" />
                   )}
                   Generate Now
+                </Button>
+              )}
+              {video.planning_status === "generating" && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => handleGenerateNow(true)}
+                  disabled={triggerGenerationMutation.isPending}
+                >
+                  {triggerGenerationMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Force Regenerate
                 </Button>
               )}
               {currentStatus === "failed" && (

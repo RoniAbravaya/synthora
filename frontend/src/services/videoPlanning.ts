@@ -129,10 +129,13 @@ export const videoPlanningService = {
 
   /**
    * Trigger immediate generation for a planned video.
+   * Use force=true to reset a stuck "generating" video.
    */
-  triggerGeneration: (videoId: string) =>
+  triggerGeneration: (videoId: string, force = false) =>
     apiClient.post<TriggerGenerationResponse>(
-      `/video-planning/planned/${videoId}/generate-now`
+      `/video-planning/planned/${videoId}/generate-now`,
+      undefined,
+      { params: force ? { force: true } : undefined }
     ),
 
   /**
