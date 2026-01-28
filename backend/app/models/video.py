@@ -37,6 +37,27 @@ class VideoStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
+class PlanningStatus(str, enum.Enum):
+    """
+    Planning workflow status for scheduled videos.
+    
+    - none: Regular video, not part of planning workflow
+    - planned: Scheduled but not yet generated
+    - generating: Generation in progress (triggered by scheduler)
+    - ready: Generated and waiting for posting time
+    - posting: Currently being posted to platforms
+    - posted: Successfully posted to all platforms
+    - failed: Generation or posting failed
+    """
+    NONE = "none"
+    PLANNED = "planned"
+    GENERATING = "generating"
+    READY = "ready"
+    POSTING = "posting"
+    POSTED = "posted"
+    FAILED = "failed"
+
+
 class GenerationStep(str, enum.Enum):
     """Steps in the video generation pipeline."""
     SCRIPT = "script"
@@ -202,6 +223,60 @@ class Video(Base, UUIDMixin, TimestampMixin):
         doc="When the video expires (for free users)"
     )
     
+    # Planning & Scheduling (for AI suggestions feature)
+    scheduled_post_time = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        doc="When the video should be posted"
+    )
+    generation_triggered_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When generation was triggered by scheduler"
+    )
+    posted_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the video was actually posted"
+    )
+    
+    # Series management
+    series_name = Column(
+        String(255),
+        nullable=True,
+        index=True,
+        doc="Name of the video series (if part of series)"
+    )
+    series_order = Column(
+        Integer,
+        nullable=True,
+        doc="Order in the series (1, 2, 3...)"
+    )
+    
+    # Platform targeting
+    target_platforms = Column(
+        ARRAY(String(50)),
+        nullable=True,
+        doc="Platforms to post to (youtube, tiktok, instagram, facebook)"
+    )
+    
+    # AI suggestion data
+    ai_suggestion_data = Column(
+        JSONB,
+        nullable=True,
+        doc="Complete AI-generated suggestion data for video generation"
+    )
+    
+    # Planning workflow status
+    planning_status = Column(
+        String(50),
+        default=PlanningStatus.NONE.value,
+        nullable=True,
+        index=True,
+        doc="Planning workflow status (none, planned, generating, ready, posting, posted, failed)"
+    )
+    
     # Relationships
     user = relationship("User", back_populates="videos")
     template = relationship("Template", back_populates="videos")
@@ -236,6 +311,28 @@ class Video(Base, UUIDMixin, TimestampMixin):
     def can_retry(self) -> bool:
         """Check if generation can be retried."""
         return self.status in ("failed", "cancelled")
+    
+    @property
+    def is_planned(self) -> bool:
+        """Check if video is planned/scheduled but not yet generated."""
+        return self.planning_status == PlanningStatus.PLANNED.value
+    
+    @property
+    def is_ready_to_post(self) -> bool:
+        """Check if video is generated and ready to post."""
+        return self.planning_status == PlanningStatus.READY.value
+    
+    @property
+    def is_part_of_series(self) -> bool:
+        """Check if video is part of a series."""
+        return self.series_name is not None
+    
+    @property
+    def series_title(self) -> Optional[str]:
+        """Get the full series title with part number."""
+        if not self.series_name or not self.series_order:
+            return self.title
+        return f"{self.series_name} - Part {self.series_order}"
     
     # Aliases for backwards compatibility
     @property

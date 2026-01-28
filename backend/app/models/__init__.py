@@ -14,11 +14,12 @@ from app.models.integration import (
     PROVIDER_CATEGORIES,
 )
 from app.models.template import Template, TemplateCategory
-from app.models.video import Video, VideoStatus, GenerationStep
+from app.models.video import Video, VideoStatus, GenerationStep, PlanningStatus
 from app.models.social_account import SocialAccount, SocialPlatform
 from app.models.post import Post, PostStatus
 from app.models.analytics import Analytics
 from app.models.ai_suggestion import AISuggestion, SuggestionType
+from app.models.ai_chat_session import AIChatSession
 from app.models.notification import Notification, NotificationType
 from app.models.job import Job, JobType, JobStatus
 from app.models.app_settings import AppSettings
@@ -48,6 +49,7 @@ __all__ = [
     "Video",
     "VideoStatus",
     "GenerationStep",
+    "PlanningStatus",
     
     # Social Account
     "SocialAccount",
@@ -63,6 +65,9 @@ __all__ = [
     # AI Suggestion
     "AISuggestion",
     "SuggestionType",
+    
+    # AI Chat Session
+    "AIChatSession",
     
     # Notification
     "Notification",
