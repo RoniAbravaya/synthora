@@ -92,6 +92,7 @@ class VideoService:
         Get the currently generating video for a user.
         
         Used to enforce concurrent generation limits.
+        Excludes videos that have been stuck for more than 30 minutes.
         
         Args:
             user_id: User's UUID
@@ -99,12 +100,64 @@ class VideoService:
         Returns:
             Video instance if one is generating, None otherwise
         """
+        from datetime import timedelta
+        
+        # Consider a video "stuck" if it's been in pending/processing for > 30 minutes
+        stuck_threshold = datetime.utcnow() - timedelta(minutes=30)
+        
         return self.db.query(Video).filter(
             and_(
                 Video.user_id == user_id,
                 Video.status.in_(["pending", "processing"]),
+                Video.updated_at > stuck_threshold,  # Only consider recently updated videos
             )
         ).first()
+    
+    def get_stuck_videos(self, user_id: UUID) -> list:
+        """
+        Get videos that appear to be stuck (pending/processing for > 30 minutes).
+        
+        Args:
+            user_id: User's UUID
+            
+        Returns:
+            List of stuck Video instances
+        """
+        from datetime import timedelta
+        
+        stuck_threshold = datetime.utcnow() - timedelta(minutes=30)
+        
+        return self.db.query(Video).filter(
+            and_(
+                Video.user_id == user_id,
+                Video.status.in_(["pending", "processing"]),
+                Video.updated_at <= stuck_threshold,
+            )
+        ).all()
+    
+    def clear_stuck_videos(self, user_id: UUID) -> int:
+        """
+        Mark stuck videos as failed to unblock new generations.
+        
+        Args:
+            user_id: User's UUID
+            
+        Returns:
+            Number of videos cleared
+        """
+        stuck_videos = self.get_stuck_videos(user_id)
+        count = 0
+        
+        for video in stuck_videos:
+            video.status = "failed"
+            video.error_message = "Auto-cancelled: Generation timed out"
+            video.updated_at = datetime.utcnow()
+            count += 1
+        
+        if count > 0:
+            self.db.commit()
+        
+        return count
     
     def count_videos_today(self, user_id: UUID) -> int:
         """

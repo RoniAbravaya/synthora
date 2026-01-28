@@ -77,6 +77,61 @@ async def get_my_video_stats(
 
 
 # =============================================================================
+# Stuck Videos Management (must be before /{video_id} routes)
+# =============================================================================
+
+@router.get("/stuck", response_model=dict)
+async def get_stuck_videos(
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get videos that appear to be stuck (pending/processing for > 30 minutes).
+    
+    **Requires:** Authentication
+    """
+    video_service = VideoService(db)
+    stuck = video_service.get_stuck_videos(user.id)
+    active = video_service.get_active_generation(user.id)
+    
+    return {
+        "stuck_videos": [
+            {
+                "id": str(v.id),
+                "title": v.title,
+                "status": v.status,
+                "created_at": str(v.created_at),
+                "updated_at": str(v.updated_at),
+            }
+            for v in stuck
+        ],
+        "stuck_count": len(stuck),
+        "has_active_generation": active is not None,
+        "active_video_id": str(active.id) if active else None,
+    }
+
+
+@router.post("/stuck/clear", response_model=dict)
+async def clear_stuck_videos(
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Clear stuck videos by marking them as failed.
+    This unblocks new video generation.
+    
+    **Requires:** Authentication
+    """
+    video_service = VideoService(db)
+    cleared_count = video_service.clear_stuck_videos(user.id)
+    
+    return {
+        "cleared_count": cleared_count,
+        "message": f"Cleared {cleared_count} stuck video(s)",
+    }
+
+
+# =============================================================================
 # Admin Endpoints (must be before /{video_id} routes)
 # =============================================================================
 
