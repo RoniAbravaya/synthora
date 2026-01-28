@@ -95,8 +95,22 @@ Videogenerator/
 │   │   ├── models/            # SQLAlchemy models
 │   │   ├── schemas/           # Pydantic schemas
 │   │   ├── services/          # Business logic
+│   │   │   └── generation/    # Video generation pipeline
+│   │   │       ├── modular_pipeline.py
+│   │   │       └── state_manager.py
 │   │   ├── integrations/      # External API integrations
+│   │   │   └── providers/     # Modular provider implementations
+│   │   │       ├── base.py    # Abstract base classes
+│   │   │       ├── factory.py # Provider factory
+│   │   │       ├── script/    # Script providers (OpenAI, Anthropic)
+│   │   │       ├── voice/     # Voice providers (ElevenLabs, OpenAI TTS)
+│   │   │       ├── media/     # Media providers (Pexels)
+│   │   │       ├── video_ai/  # Video AI providers (stubs)
+│   │   │       └── assembly/  # Assembly providers (FFmpeg)
 │   │   ├── workers/           # RQ job definitions
+│   │   │   ├── video_worker.py
+│   │   │   ├── video_scheduler.py
+│   │   │   └── stuck_job_monitor.py
 │   │   └── utils/             # Helpers & utilities
 │   ├── alembic/               # Database migrations
 │   ├── tests/                 # Backend tests
@@ -205,8 +219,42 @@ Videogenerator/
 5. Generation Progress (real-time)
 6. Review & Download
 
-- Error handling: Stop immediately, show full error payload, manual retry
-- Partial failure: Save progress, allow resume or swap integration
+#### Generation Pipeline States
+
+```
+PENDING → QUEUED → PROCESSING → [Step States] → COMPLETED
+                              ↓                    ↑
+                           FAILED ──────────────────┘ (retry)
+                              ↓
+                          CANCELLED
+```
+
+#### Step States (sequential)
+1. `script_generating` → `script_completed`
+2. `voice_generating` → `voice_completed`
+3. `media_fetching` → `media_completed`
+4. `video_ai_generating` → `video_ai_completed` (optional)
+5. `assembly_processing` → `assembly_completed`
+
+#### Pipeline Features
+- **State Machine:** `PipelineStateManager` tracks step progress
+- **Concurrency:** Max 1 active generation per user
+- **Resume:** Failed videos can resume from last completed step
+- **Cancel:** Users can cancel in-progress generations
+- **Stuck Detection:** Auto-cancel after 30 minutes of no progress
+- **Subtitle Sync:** Voice timing data used to generate ASS subtitles
+
+#### Error Handling
+- Immediate fail on step error
+- Full error payload saved to `generation_state`
+- Manual retry with optional provider swap
+- Graceful skip if scheduled video is deleted
+
+#### API Logging
+All external API requests are logged to `api_request_logs`:
+- Full request/response bodies (sensitive data masked)
+- Duration, status code, error details
+- Linked to user, video, and generation step
 
 ### 4. Posting Page
 - Video selection gallery
@@ -264,37 +312,103 @@ Videogenerator/
 
 ## AI Integrations
 
-### Required Categories (Min 4-5 to generate video)
+### Modular Provider Architecture (Updated Jan 2026)
 
-| # | Category | Purpose | Available Services |
+The video generation system uses a **modular provider pattern** that allows:
+- Independent, swappable providers per category
+- User-configurable default providers
+- Runtime provider selection
+- Easy addition of new providers
+
+### Provider Categories
+
+| # | Category | Purpose | Available Providers |
 |---|----------|---------|-------------------|
-| 1 | **Script/Text AI** | Generate video script | OpenAI (ChatGPT) |
-| 2 | **Voice AI** | Generate voiceover | ElevenLabs |
-| 3 | **Stock Media** | Background images/clips | Pexels, Unsplash |
-| 4 | **Video Generation AI** | Generate AI video clips | Google Veo 3, OpenAI Sora, Runway Gen-4, ImagineArt AI, PixVerse, Seedance AI, Wan2.6, Hailuo AI, Luma Dream Machine, LTX-2 |
-| 5 | **Video Assembly** | Compile final video | FFmpeg (self-hosted), Creatomate, Shotstack, Remotion, Editframe |
+| 1 | **Script/Text AI** | Generate video scripts | `openai_gpt` (GPT-4o), `anthropic` (Claude) |
+| 2 | **Voice AI** | Generate voiceover with timing | `elevenlabs`, `openai_tts` |
+| 3 | **Stock Media** | Background videos/images | `pexels` |
+| 4 | **Video AI** | AI-generated video clips (optional) | `openai_sora` (stub), `runway` (stub), `luma` (stub) |
+| 5 | **Video Assembly** | Compile final video with subtitles | `ffmpeg` (local) |
+
+### Provider Class Hierarchy
+
+```
+BaseProvider (abstract)
+├── ScriptProvider
+│   ├── OpenAIGPTProvider
+│   └── AnthropicProvider
+├── VoiceProvider
+│   ├── ElevenLabsProvider
+│   └── OpenAITTSProvider
+├── MediaProvider
+│   └── PexelsProvider
+├── VideoAIProvider
+│   ├── OpenAISoraProvider (stub)
+│   ├── RunwayProvider (stub)
+│   └── LumaProvider (stub)
+└── AssemblyProvider
+    └── FFmpegProvider
+```
+
+### Provider Factory Pattern
+
+```python
+# Get provider by name
+provider = factory.get_provider("openai_gpt", api_key, config)
+
+# Get available providers for category
+providers = factory.get_providers_for_category(IntegrationCategory.SCRIPT)
+
+# Get provider info with pricing
+info = ProviderFactory.get_provider_info("elevenlabs")
+```
+
+### User Generation Settings
+
+Users can configure default providers per category in Settings:
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `default_script_provider` | AI for script generation | Auto (first available) |
+| `default_voice_provider` | TTS provider | Auto (first available) |
+| `default_media_provider` | Stock media source | Auto (first available) |
+| `default_video_ai_provider` | AI video generation | None (skip step) |
+| `default_assembly_provider` | Video assembly engine | `ffmpeg` |
+| `subtitle_style` | Subtitle appearance | `modern` |
+
+### Subtitle Styles
+
+| Style | Description |
+|-------|-------------|
+| `classic` | White text on black background |
+| `modern` | Semi-transparent dark background |
+| `bold` | Yellow text with black outline |
+| `minimal` | White text with shadow, no background |
 
 ### Integration Authentication
 
-| Service | Auth Method | Notes |
-|---------|-------------|-------|
-| OpenAI | API Key | sk-... format |
-| ElevenLabs | API Key | xi-... format |
-| Pexels | API Key | Direct key |
-| Unsplash | API Key | Access key |
-| Google Veo 3 | OAuth / API Key | Check docs |
-| OpenAI Sora | API Key | Same as OpenAI |
-| Runway Gen-4 | API Key | Check docs |
-| ImagineArt | API Key | Check docs |
-| PixVerse | API Key | Check docs |
-| Seedance AI | API Key | Check docs |
-| Wan2.6 | API Key | Check docs |
-| Hailuo AI | API Key | Check docs |
-| Luma Dream Machine | API Key | Check docs |
-| LTX-2 | API Key | Check docs |
-| Creatomate | API Key | Check docs |
-| Shotstack | API Key | Check docs |
-| Editframe | API Key | Check docs |
+| Provider | Auth Type | API Key Format |
+|----------|-----------|----------------|
+| `openai_gpt` | API Key | `sk-...` |
+| `openai_tts` | API Key | `sk-...` |
+| `openai_sora` | API Key | `sk-...` |
+| `anthropic` | API Key | `sk-ant-...` |
+| `elevenlabs` | API Key | Any |
+| `pexels` | API Key | Any |
+| `ffmpeg` | None | Local binary |
+
+### Cost Estimation
+
+Provider pricing is tracked for cost estimates (per typical 60s video):
+
+| Provider | Unit | Cost |
+|----------|------|------|
+| `openai_gpt` | per 1K tokens | $0.005 input, $0.015 output |
+| `anthropic` | per 1K tokens | $0.003 input, $0.015 output |
+| `elevenlabs` | per 1K chars | $0.30 |
+| `openai_tts` | per 1K chars | $0.015 |
+| `pexels` | per request | Free |
+| `ffmpeg` | per video | Free |
 
 - OAuth where available (one-click auth)
 - API Key + documentation link as fallback
@@ -418,6 +532,25 @@ Videogenerator/
 │ created_at       │
 │ completed_at     │
 └──────────────────┘
+
+┌────────────────────────┐     ┌─────────────────────────┐
+│ user_generation_       │     │   api_request_logs      │
+│     settings           │     ├─────────────────────────┤
+├────────────────────────┤     │ id (PK)                 │
+│ id (PK)                │     │ user_id (FK)            │
+│ user_id (FK, unique)   │     │ video_id (FK)           │
+│ default_script_provider│     │ provider                │
+│ default_voice_provider │     │ endpoint                │
+│ default_media_provider │     │ method                  │
+│ default_video_ai_prov. │     │ request_body (JSON)     │
+│ default_assembly_prov. │     │ status_code             │
+│ subtitle_style         │     │ response_body (JSON)    │
+│ created_at             │     │ duration_ms             │
+│ updated_at             │     │ error_message           │
+└────────────────────────┘     │ error_details (JSON)    │
+                               │ generation_step         │
+                               │ created_at              │
+                               └─────────────────────────┘
 ```
 
 ### Data Encryption
@@ -472,12 +605,25 @@ Videogenerator/
 │
 ├── /videos
 │   ├── GET    /                   # List user's videos
+│   ├── GET    /scheduled          # List scheduled videos
 │   ├── POST   /generate           # Start video generation
 │   ├── GET    /{id}               # Get video details
 │   ├── GET    /{id}/status        # Get generation status
 │   ├── POST   /{id}/retry         # Retry failed generation
 │   ├── POST   /{id}/swap          # Swap integration & retry
+│   ├── POST   /{id}/generate-now  # Trigger immediate generation
+│   ├── POST   /{id}/cancel        # Cancel in-progress generation
+│   ├── PUT    /{id}/reschedule    # Reschedule planned video
+│   ├── PUT    /{id}/edit          # Edit planned video details
 │   └── DELETE /{id}               # Delete video
+│
+├── /settings/generation
+│   ├── GET    /                   # Get generation settings
+│   ├── PUT    /                   # Update generation settings
+│   ├── GET    /cost-estimate      # Get cost estimate per video
+│   ├── GET    /available-providers# Get available providers
+│   ├── GET    /effective-providers# Get effective provider for each category
+│   └── GET    /subtitle-config    # Get subtitle style config
 │
 ├── /social-accounts
 │   ├── GET    /                   # List connected accounts
@@ -527,6 +673,13 @@ Videogenerator/
 │   ├── GET    /stats              # Platform statistics
 │   ├── GET    /revenue            # Revenue metrics
 │   └── PATCH  /settings           # System settings
+│
+├── /admin/api-logs
+│   ├── GET    /                   # List API logs (filterable)
+│   ├── GET    /stats              # Provider statistics
+│   ├── GET    /{id}               # Get log detail
+│   ├── GET    /video/{id}         # Get logs for a video
+│   └── DELETE /cleanup            # Delete old logs
 │
 └── /health
     └── GET    /                   # Health check
