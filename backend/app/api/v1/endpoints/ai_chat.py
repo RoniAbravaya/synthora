@@ -17,7 +17,8 @@ from app.core.auth import require_premium
 from app.models.user import User
 from app.models.ai_chat_session import AIChatSession
 from app.services.ai_chat import AIChatService
-from app.services.integrations import IntegrationsService
+from app.services.integration import IntegrationService
+from app.models.integration import IntegrationProvider
 from app.schemas.ai_chat import (
     ChatMessageRequest,
     ChatMessageResponse,
@@ -180,9 +181,9 @@ async def send_message(
         )
     
     # Check OpenAI integration
-    integrations_service = IntegrationsService(db)
-    openai_integration = integrations_service.get_user_integration(
-        current_user.id, "openai"
+    integration_service = IntegrationService(db)
+    openai_integration = integration_service.get_by_provider(
+        current_user.id, IntegrationProvider.OPENAI
     )
     
     if not openai_integration:
@@ -191,9 +192,15 @@ async def send_message(
             detail="OpenAI integration not configured. Please add your API key in Settings > Integrations.",
         )
     
+    if not openai_integration.is_active or not openai_integration.is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OpenAI integration is not active or validated. Please check Settings > Integrations.",
+        )
+    
     # Get API key
     try:
-        openai_key = integrations_service.decrypt_api_key(openai_integration.api_key_encrypted)
+        openai_key = integration_service.get_decrypted_api_key(openai_integration)
     except Exception as e:
         logger.error(f"Failed to decrypt OpenAI key: {e}")
         raise HTTPException(
