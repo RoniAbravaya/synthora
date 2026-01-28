@@ -19,6 +19,7 @@ from app.models.social_account import SocialAccount, SocialPlatform
 from app.models.analytics import Analytics
 from app.services.analytics import AnalyticsService
 from app.services.analytics_fetchers import get_fetcher
+from app.services.social_oauth import SocialOAuthService
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +82,20 @@ def sync_post_analytics_job(post_id: str) -> dict:
             logger.info(f"Analytics sync: Found social account {social_account.id} for {platform_name}")
             logger.info(f"Analytics sync: Platform post ID = {platform_post_id}")
             
-            # Decrypt access token
-            access_token = decrypt_value(social_account.access_token_encrypted)
+            # Get access token with automatic refresh if expired
+            oauth_service = SocialOAuthService(db)
+            access_token = oauth_service.get_access_token(social_account)
+            
+            if not access_token:
+                logger.error(f"Analytics sync: Failed to get valid access token for account {social_account.id}")
+                return {"success": False, "error": "Failed to get valid access token - token may be expired or refresh failed"}
+            
+            # Get refresh token if available (for fetchers that need it)
             refresh_token = None
             if social_account.refresh_token_encrypted:
                 refresh_token = decrypt_value(social_account.refresh_token_encrypted)
             
-            logger.info(f"Analytics sync: Access token decrypted (length={len(access_token) if access_token else 0})")
+            logger.info(f"Analytics sync: Access token obtained (length={len(access_token) if access_token else 0})")
             
             # Get fetcher
             fetcher_class = get_fetcher(platform_name)
@@ -307,13 +315,21 @@ def sync_channel_analytics_job(user_id: str) -> dict:
         
         results = {}
         
+        oauth_service = SocialOAuthService(db)
+        
         for account in accounts:
             try:
                 # Platform is now stored as string
                 platform_name = account.platform
                 
-                # Decrypt tokens
-                access_token = decrypt_value(account.access_token_encrypted)
+                # Get access token with automatic refresh if expired
+                access_token = oauth_service.get_access_token(account)
+                
+                if not access_token:
+                    logger.error(f"Failed to get valid access token for account {account.id}")
+                    results[platform_name] = {"error": "Token expired or refresh failed"}
+                    continue
+                
                 refresh_token = None
                 if account.refresh_token_encrypted:
                     refresh_token = decrypt_value(account.refresh_token_encrypted)
