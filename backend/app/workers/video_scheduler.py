@@ -68,7 +68,32 @@ def check_and_trigger_scheduled_videos() -> Dict[str, Any]:
         }
         
         for video in videos_to_generate:
+            video_id = video.id
+            
             try:
+                # IMPORTANT: Re-fetch video to check if it still exists
+                # This handles the case where a video was deleted after the initial query
+                video = db.query(Video).filter(Video.id == video_id).first()
+                
+                if video is None:
+                    logger.info(f"Video {video_id} was deleted, skipping")
+                    results["details"].append({
+                        "video_id": str(video_id),
+                        "status": "skipped",
+                        "reason": "deleted",
+                    })
+                    continue
+                
+                # Check if status changed (e.g., user cancelled or triggered manually)
+                if video.planning_status != PlanningStatus.PLANNED.value:
+                    logger.info(f"Video {video_id} status changed to {video.planning_status}, skipping")
+                    results["details"].append({
+                        "video_id": str(video_id),
+                        "status": "skipped",
+                        "reason": f"status_changed_to_{video.planning_status}",
+                    })
+                    continue
+                
                 # Mark generation as triggered
                 video.planning_status = PlanningStatus.GENERATING.value
                 video.generation_triggered_at = now
@@ -91,12 +116,18 @@ def check_and_trigger_scheduled_videos() -> Dict[str, Any]:
                 logger.info(f"Triggered generation for video {video.id}, job {job_id}")
                 
             except Exception as e:
-                logger.error(f"Failed to trigger generation for video {video.id}: {e}")
-                video.planning_status = PlanningStatus.FAILED.value
-                db.commit()
+                logger.error(f"Failed to trigger generation for video {video_id}: {e}")
                 
-                # Notify user of failure
-                _notify_generation_failure(db, video, str(e))
+                # Try to update status if video still exists
+                try:
+                    video = db.query(Video).filter(Video.id == video_id).first()
+                    if video:
+                        video.planning_status = PlanningStatus.FAILED.value
+                        video.error_message = str(e)
+                        db.commit()
+                        _notify_generation_failure(db, video, str(e))
+                except Exception as inner_e:
+                    logger.error(f"Failed to update video status: {inner_e}")
                 
                 results["failed"] += 1
                 results["details"].append({
