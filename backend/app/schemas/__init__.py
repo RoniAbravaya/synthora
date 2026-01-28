@@ -127,6 +127,42 @@ from app.schemas.suggestion import (
     DismissRequest,
     GenerateSuggestionsRequest,
 )
+from app.schemas.ai_suggestion_data import (
+    AISuggestionData,
+    SmartSuggestionResponse,
+    ScheduleItem,
+    VideoSeriesPlan,
+    MonthlyContentPlan,
+    SingleVideoActionData,
+    SeriesActionData,
+    MonthlyPlanActionData,
+    ScheduleActionData,
+)
+from app.schemas.ai_chat import (
+    ActionCard,
+    ChatMessage,
+    ChatMessageRequest,
+    ExecuteActionRequest,
+    ChatMessageResponse,
+    ChatSessionResponse,
+    ChatSessionListItem,
+    ChatSessionListResponse,
+    ExecuteActionResponse,
+)
+from app.schemas.video_planning import (
+    ScheduleVideoRequest,
+    CreateSeriesRequest,
+    CreateMonthlyPlanRequest,
+    UpdatePlannedVideoRequest,
+    PlannedVideoResponse,
+    ScheduleVideoResponse,
+    CreateSeriesResponse,
+    CreateMonthlyPlanResponse,
+    PlannedVideoListResponse,
+    TriggerGenerationResponse,
+    CalendarVideoItem,
+    CalendarViewResponse,
+)
 from app.schemas.notification import (
     NotificationResponse,
     NotificationListItem,
@@ -287,6 +323,42 @@ __all__ = [
     "MarkReadRequest",
     "DismissRequest",
     "GenerateSuggestionsRequest",
+    
+    # AI Suggestion Data
+    "AISuggestionData",
+    "SmartSuggestionResponse",
+    "ScheduleItem",
+    "VideoSeriesPlan",
+    "MonthlyContentPlan",
+    "SingleVideoActionData",
+    "SeriesActionData",
+    "MonthlyPlanActionData",
+    "ScheduleActionData",
+    
+    # AI Chat
+    "ActionCard",
+    "ChatMessage",
+    "ChatMessageRequest",
+    "ExecuteActionRequest",
+    "ChatMessageResponse",
+    "ChatSessionResponse",
+    "ChatSessionListItem",
+    "ChatSessionListResponse",
+    "ExecuteActionResponse",
+    
+    # Video Planning
+    "ScheduleVideoRequest",
+    "CreateSeriesRequest",
+    "CreateMonthlyPlanRequest",
+    "UpdatePlannedVideoRequest",
+    "PlannedVideoResponse",
+    "ScheduleVideoResponse",
+    "CreateSeriesResponse",
+    "CreateMonthlyPlanResponse",
+    "PlannedVideoListResponse",
+    "TriggerGenerationResponse",
+    "CalendarVideoItem",
+    "CalendarViewResponse",
     
     # Notification
     "NotificationResponse",
