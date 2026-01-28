@@ -1,11 +1,11 @@
 /**
  * Calendar Page
  * 
- * Scheduled posts calendar view with monthly/weekly views.
+ * Scheduled posts and planned videos calendar view with monthly/weekly views.
  */
 
 import { useState, useMemo } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ChevronLeft,
   ChevronRight,
@@ -17,9 +17,15 @@ import {
   Youtube,
   Facebook,
   Loader2,
+  Sparkles,
+  Play,
+  Trash2,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react"
 import { cn, formatDate } from "@/lib/utils"
 import { postsService } from "@/services/posts"
+import { usePlannedVideos, useDeletePlannedVideo, useTriggerGeneration } from "@/hooks/useVideoPlanning"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -30,6 +36,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Link } from "react-router-dom"
+import type { PlannedVideo, PlanningStatus } from "@/types"
 
 // =============================================================================
 // Types
@@ -377,6 +384,139 @@ function UpcomingPosts({ posts }: UpcomingPostsProps) {
 }
 
 // =============================================================================
+// Planned Videos Sidebar
+// =============================================================================
+
+const statusColors: Record<PlanningStatus, string> = {
+  none: "text-muted-foreground",
+  planned: "text-blue-500",
+  generating: "text-yellow-500",
+  ready: "text-green-500",
+  posting: "text-purple-500",
+  posted: "text-green-600",
+  failed: "text-red-500",
+}
+
+const statusIcons: Record<PlanningStatus, React.ReactNode> = {
+  none: null,
+  planned: <Clock className="h-3 w-3" />,
+  generating: <Loader2 className="h-3 w-3 animate-spin" />,
+  ready: <CheckCircle2 className="h-3 w-3" />,
+  posting: <Loader2 className="h-3 w-3 animate-spin" />,
+  posted: <CheckCircle2 className="h-3 w-3" />,
+  failed: <AlertCircle className="h-3 w-3" />,
+}
+
+function PlannedVideosSidebar() {
+  const { data: plannedData, isLoading } = usePlannedVideos({ include_posted: false })
+  const deleteMutation = useDeletePlannedVideo()
+  const triggerMutation = useTriggerGeneration()
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Sparkles className="h-5 w-5" />
+            Planned Videos
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center py-4">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const videos = plannedData?.videos || []
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-primary" />
+          Planned Videos
+        </CardTitle>
+        <CardDescription>AI-generated videos waiting to be created</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {videos.length === 0 ? (
+          <div className="text-center py-4">
+            <p className="text-sm text-muted-foreground">No planned videos.</p>
+            <Link to="/suggestions">
+              <Button variant="outline" size="sm" className="mt-2">
+                <Plus className="mr-2 h-3 w-3" />
+                Create with AI
+              </Button>
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {videos.slice(0, 5).map((video) => (
+              <div
+                key={video.id}
+                className="flex items-start gap-3 rounded-lg border p-3"
+              >
+                <div className={cn("mt-0.5", statusColors[video.planning_status as PlanningStatus])}>
+                  {statusIcons[video.planning_status as PlanningStatus]}
+                </div>
+                <div className="flex-1 space-y-1 min-w-0">
+                  <p className="text-sm font-medium leading-none truncate">
+                    {video.title || video.ai_suggestion_data?.title || "Untitled"}
+                  </p>
+                  {video.scheduled_post_time && (
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(video.scheduled_post_time)}
+                    </p>
+                  )}
+                  {video.series_name && (
+                    <p className="text-xs text-primary">
+                      {video.series_name} Part {video.series_order}
+                    </p>
+                  )}
+                  <p className={cn("text-xs capitalize", statusColors[video.planning_status as PlanningStatus])}>
+                    {video.planning_status}
+                  </p>
+                </div>
+                {video.planning_status === "planned" && (
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => triggerMutation.mutate(video.id)}
+                      disabled={triggerMutation.isPending}
+                    >
+                      <Play className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive"
+                      onClick={() => deleteMutation.mutate(video.id)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {videos.length > 5 && (
+              <Link to="/suggestions" className="block">
+                <Button variant="ghost" size="sm" className="w-full">
+                  View all {videos.length} planned videos
+                </Button>
+              </Link>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// =============================================================================
 // Main Page Component
 // =============================================================================
 
@@ -528,6 +668,8 @@ export default function CalendarPage() {
         </div>
 
         <div className="space-y-6">
+          <PlannedVideosSidebar />
+          
           <UpcomingPosts posts={posts} />
 
           <Card>
