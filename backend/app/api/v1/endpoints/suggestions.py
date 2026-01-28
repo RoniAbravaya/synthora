@@ -41,6 +41,10 @@ from app.schemas.suggestion import (
     GenerateSuggestionsResponse,
     DismissRequest,
 )
+from app.schemas.ai_suggestion_data import SmartSuggestionResponse
+from app.services.ai_suggestion_generator import AISuggestionGenerator
+from app.services.integrations import IntegrationsService
+from app.models.ai_chat_session import AIChatSession
 
 logger = logging.getLogger(__name__)
 
@@ -477,4 +481,86 @@ async def generate_suggestions(
         message="Suggestions generation queued successfully",
         job_id=job_id,
         estimated_time="2-5 minutes",
+    )
+
+
+@router.post("/generate-smart", response_model=SmartSuggestionResponse)
+async def generate_smart_suggestion(
+    current_user: User = Depends(require_premium),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a smart AI suggestion based on user data.
+    
+    This endpoint:
+    1. Checks data sufficiency (≥3 posts, ≥3 days history, ≥20 engagement)
+    2. If sufficient: analyzes user's analytics for personalized suggestion
+    3. If insufficient: uses trending topics and general ideas
+    4. Creates a chat session for follow-up conversation
+    5. Returns complete suggestion with all video generation details
+    
+    Requires OpenAI integration to be configured.
+    """
+    # Check OpenAI integration
+    integrations_service = IntegrationsService(db)
+    openai_integration = integrations_service.get_user_integration(
+        current_user.id, "openai"
+    )
+    
+    if not openai_integration:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OpenAI integration not configured. Please add your API key in Settings > Integrations.",
+        )
+    
+    # Get API key
+    try:
+        openai_key = integrations_service.decrypt_api_key(openai_integration.api_key_encrypted)
+    except Exception as e:
+        logger.error(f"Failed to decrypt OpenAI key: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to access OpenAI integration",
+        )
+    
+    # Generate suggestion
+    generator = AISuggestionGenerator(db, openai_key)
+    
+    try:
+        suggestion, data_source, data_stats = await generator.generate_suggestion(current_user.id)
+    except Exception as e:
+        logger.exception(f"Smart suggestion generation failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate suggestion: {str(e)}",
+        )
+    
+    # Create chat session with this suggestion as context
+    import uuid
+    chat_session = AIChatSession(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        suggestion_context=suggestion.model_dump(),
+        messages=[
+            {
+                "role": "assistant",
+                "content": f"I've created a video suggestion for you based on {'your analytics data' if data_source == 'analytics' else 'current trends'}. The idea is: **{suggestion.title}**\n\n{suggestion.description}\n\nWould you like to:\n- Generate this video now\n- Schedule it for later\n- Refine the idea\n- Create a video series on this topic\n- Create a monthly content plan",
+                "timestamp": str(uuid.uuid4()),  # Will be replaced with actual timestamp
+            }
+        ],
+        is_active=True,
+    )
+    
+    from datetime import datetime
+    chat_session.messages[0]["timestamp"] = datetime.utcnow().isoformat()
+    
+    db.add(chat_session)
+    db.commit()
+    db.refresh(chat_session)
+    
+    return SmartSuggestionResponse(
+        suggestion=suggestion,
+        chat_session_id=chat_session.id,
+        data_source=data_source,
+        data_stats=data_stats,
     )

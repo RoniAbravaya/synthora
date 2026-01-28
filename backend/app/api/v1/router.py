@@ -23,6 +23,8 @@ from app.api.v1.endpoints import (
     subscriptions,
     admin,
     health,
+    ai_chat,
+    video_planning,
 )
 
 # Create main API router
@@ -60,6 +62,12 @@ api_router.include_router(analytics.router)
 
 # AI Suggestions endpoints
 api_router.include_router(suggestions.router)
+
+# AI Chat endpoints
+api_router.include_router(ai_chat.router)
+
+# Video Planning endpoints
+api_router.include_router(video_planning.router)
 
 # Notification endpoints
 api_router.include_router(notifications.router)
