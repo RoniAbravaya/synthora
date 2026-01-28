@@ -10,4 +10,6 @@ export * from "./useSubscription"
 export * from "./useSocialAccounts"
 export * from "./useAdmin"
 export * from "./useSuggestions"
+export * from "./useAIChat"
+export * from "./useVideoPlanning"
 

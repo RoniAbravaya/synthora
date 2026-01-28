@@ -3,7 +3,7 @@
  */
 
 import { apiClient } from "@/lib/api"
-import type { SuggestionType } from "@/types"
+import type { SuggestionType, SmartSuggestionResponse } from "@/types"
 
 // =============================================================================
 // Types
@@ -170,5 +170,13 @@ export const suggestionsService = {
    */
   generate: () =>
     apiClient.post<{ message: string; job_id: string; estimated_time: string }>("/suggestions/generate"),
+
+  /**
+   * Generate a smart AI suggestion based on user data.
+   * Checks data sufficiency and generates personalized or trend-based suggestion.
+   * Creates a chat session for follow-up conversation.
+   */
+  generateSmart: () =>
+    apiClient.post<SmartSuggestionResponse>("/suggestions/generate-smart"),
 }
 

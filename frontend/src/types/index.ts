@@ -298,6 +298,145 @@ export interface Suggestion {
 }
 
 // =============================================================================
+// AI Suggestion Data Types (Enhanced)
+// =============================================================================
+
+export interface AISuggestionData {
+  title: string
+  description: string
+  hook: string
+  script_outline: string
+  hashtags: string[]
+  estimated_duration_seconds: number
+  visual_style: string
+  tone: string
+  target_audience: string
+  recommended_platforms: string[]
+  platform_specific_notes?: Record<string, string>
+  based_on_analytics: boolean
+  source_data?: Record<string, unknown>
+  is_series?: boolean
+  series_total_parts?: number
+  series_theme?: string
+}
+
+export interface SmartSuggestionResponse {
+  suggestion: AISuggestionData
+  chat_session_id: string
+  data_source: "analytics" | "trends"
+  data_stats?: {
+    post_count: number
+    days_history: number
+    total_engagement: number
+  }
+}
+
+// =============================================================================
+// AI Chat Types
+// =============================================================================
+
+export type ActionCardType = "single_video" | "series" | "monthly_plan" | "schedule"
+
+export interface ActionCard {
+  type: ActionCardType
+  title: string
+  description: string
+  data: Record<string, unknown>
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant"
+  content: string
+  timestamp: string
+  action_cards?: ActionCard[]
+}
+
+export interface ChatMessageResponse {
+  message: string
+  action_cards: ActionCard[]
+  needs_clarification: boolean
+  clarification_question?: string
+}
+
+export interface ChatSession {
+  id: string
+  user_id: string
+  suggestion_context: AISuggestionData | null
+  messages: ChatMessage[]
+  is_active: boolean
+  created_at: string
+  updated_at?: string
+}
+
+// =============================================================================
+// Video Planning Types
+// =============================================================================
+
+export type PlanningStatus = 
+  | "none"
+  | "planned"
+  | "generating"
+  | "ready"
+  | "posting"
+  | "posted"
+  | "failed"
+
+export interface PlannedVideo {
+  id: string
+  user_id: string
+  title: string | null
+  prompt: string | null
+  planning_status: PlanningStatus
+  scheduled_post_time: string | null
+  generation_triggered_at: string | null
+  posted_at: string | null
+  series_name: string | null
+  series_order: number | null
+  target_platforms: string[]
+  ai_suggestion_data: AISuggestionData | null
+  video_url: string | null
+  thumbnail_url: string | null
+  duration: number | null
+  error_message: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ScheduleVideoRequest {
+  suggestion_data: AISuggestionData
+  scheduled_post_time: string
+  target_platforms: string[]
+  series_name?: string
+  series_order?: number
+}
+
+export interface ScheduleItem {
+  video_index: number
+  scheduled_time: string
+  target_platforms?: string[]
+}
+
+export interface CreateSeriesRequest {
+  series_name: string
+  videos: AISuggestionData[]
+  schedule: ScheduleItem[]
+  target_platforms: string[]
+}
+
+export interface CalendarVideoItem {
+  id: string
+  title: string | null
+  planning_status: PlanningStatus
+  scheduled_post_time: string | null
+  target_platforms: string[]
+  series_name: string | null
+  series_order: number | null
+  thumbnail_url: string | null
+  is_overdue: boolean
+  can_generate_now: boolean
+}
+
+// =============================================================================
 // API Response Types
 // =============================================================================
 

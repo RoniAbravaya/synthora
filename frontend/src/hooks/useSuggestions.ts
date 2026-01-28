@@ -138,6 +138,21 @@ export function useGenerateSuggestions() {
   })
 }
 
+/**
+ * Hook to generate a smart AI suggestion with chat session.
+ * Returns a complete suggestion with chat_session_id for follow-up.
+ */
+export function useGenerateSmartSuggestion() {
+  const queryClient = useQueryClient()
+  
+  return useMutation({
+    mutationFn: () => suggestionsService.generateSmart(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: suggestionsKeys.all })
+    },
+  })
+}
+
 // =============================================================================
 // Analysis Hooks
 // =============================================================================
