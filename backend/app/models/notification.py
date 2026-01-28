@@ -52,6 +52,9 @@ class NotificationType(str, enum.Enum):
     SUBSCRIPTION_EXPIRING = "subscription_expiring"
     INTEGRATION_ERROR = "integration_error"
     SOCIAL_DISCONNECT = "social_disconnect"
+    # Video planning notification types
+    VIDEO_POSTED_SUCCESSFULLY = "video_posted_successfully"
+    VIDEO_POSTING_FAILED = "video_posting_failed"
 
 
 class NotificationPriority(str, enum.Enum):

@@ -256,6 +256,9 @@ export interface PlanInfo {
 export type NotificationType = 
   | "video_completed"
   | "video_failed"
+  | "video_generation_failed"
+  | "video_posted_successfully"
+  | "video_posting_failed"
   | "post_published"
   | "post_failed"
   | "suggestion"
