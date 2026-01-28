@@ -205,6 +205,17 @@ def sync_user_analytics_job(user_id: str) -> dict:
         
         logger.info(f"Found {len(posts)} published posts for user {user_id}")
         
+        if len(posts) == 0:
+            logger.info(f"No published posts found for user {user_id} - nothing to sync")
+            return {
+                "success": True,
+                "user_id": user_id,
+                "total_posts": 0,
+                "synced": 0,
+                "failed": 0,
+                "message": "No published posts found. Analytics will be available after publishing content.",
+            }
+        
         results = {
             "total_posts": len(posts),
             "synced": 0,

@@ -15,9 +15,17 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Formats a date to a human-readable string.
+ * Returns "N/A" if the date is null or undefined.
  */
-export function formatDate(date: Date | string): string {
+export function formatDate(date: Date | string | null | undefined): string {
+  if (date === null || date === undefined) {
+    return "N/A"
+  }
   const d = typeof date === "string" ? new Date(date) : date
+  // Check for invalid date
+  if (isNaN(d.getTime())) {
+    return "N/A"
+  }
   return d.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
@@ -27,9 +35,17 @@ export function formatDate(date: Date | string): string {
 
 /**
  * Formats a date to a relative time string (e.g., "2 hours ago").
+ * Returns "N/A" if the date is null or undefined.
  */
-export function formatRelativeTime(date: Date | string): string {
+export function formatRelativeTime(date: Date | string | null | undefined): string {
+  if (date === null || date === undefined) {
+    return "N/A"
+  }
   const d = typeof date === "string" ? new Date(date) : date
+  // Check for invalid date
+  if (isNaN(d.getTime())) {
+    return "N/A"
+  }
   const now = new Date()
   const diff = now.getTime() - d.getTime()
   
