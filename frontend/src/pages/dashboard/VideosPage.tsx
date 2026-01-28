@@ -164,7 +164,7 @@ function VideoCard({
         {video.scheduled_post_time && video.planning_status === "planned" && (
           <div className="absolute top-2 left-2 flex items-center gap-1 rounded bg-amber-500/90 px-2 py-0.5 text-xs font-medium text-white">
             <CalendarClock className="h-3 w-3" />
-            {formatDate(video.scheduled_post_time, "short")}
+            {formatDate(video.scheduled_post_time)}
           </div>
         )}
 
