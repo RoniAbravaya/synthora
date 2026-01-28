@@ -36,7 +36,7 @@ export default function DashboardPage() {
   // Fetch upcoming posts for scheduled posts count
   const { data: upcomingData, isLoading: upcomingLoading } = useQuery({
     queryKey: ["posts", "upcoming"],
-    queryFn: () => postsService.getUpcoming(100),
+    queryFn: () => postsService.getUpcoming(50), // Backend max is 50
   })
 
   // Calculate values with safe defaults

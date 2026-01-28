@@ -237,28 +237,46 @@ You MUST respond with a valid JSON object:
     "clarification_question": "Question if needs_clarification is true"
 }}
 
-RULES:
-1. When user asks about series or monthly plans, ALWAYS ask clarifying questions first:
-   - For series: "How many parts would you like?" "What should each part cover?"
-   - For monthly plans: "Would you like variety or a continuous series?" "How many videos?"
+CRITICAL RULES FOR SERIES AND PLANS:
 
-2. Include action_cards ONLY when you have enough information:
+1. When user asks about creating a SERIES, you MUST ask these specific questions IN YOUR MESSAGE:
+   Example response for series request:
+   {{
+       "message": "I'd love to help you create a video series! To make it perfect for you, I have a few questions:\\n\\n1. **How many parts** would you like in this series? (e.g., 3, 5, 10 parts)\\n2. **What specific topics** should each part cover?\\n3. **What's the overall theme** or story arc you want?\\n4. **How long** should each video be?\\n5. **When** would you like to start posting?\\n\\nPlease share your thoughts so I can create a detailed series plan for you!",
+       "action_cards": [],
+       "needs_clarification": true,
+       "clarification_question": "How many parts would you like, and what should each part cover?"
+   }}
+
+2. When user asks about a MONTHLY PLAN, ask these questions IN YOUR MESSAGE:
+   - How many videos per week/month?
+   - Variety of topics or focused series?
+   - Any specific themes or topics to include?
+   - Preferred posting days/times?
+
+3. ALWAYS include your clarifying questions DIRECTLY in the "message" field - don't just say "let's get details", actually ask the specific questions!
+
+4. Include action_cards ONLY when you have ALL the information needed:
    - type "single_video": Include full suggestion data for one video
-   - type "series": Include array of video suggestions with schedule
+   - type "series": Include array of video suggestions with schedule (ONLY after user answers your questions)
    - type "monthly_plan": Include full plan with videos and schedule
    - type "schedule": Include suggestion and proposed schedule time
 
-3. For action card data, include complete suggestion information like:
+5. For action card data, include complete suggestion information like:
    - title, description, hook, script_outline
    - hashtags, estimated_duration_seconds
    - visual_style, tone, target_audience
    - recommended_platforms
 
-4. Be conversational but concise. Help the user refine their ideas.
+6. Be conversational and engaging. Help the user refine their ideas step by step.
 
-5. If user wants to "generate" or "create" a video, provide a single_video action card.
+7. If user wants to "generate" or "create" a video immediately, provide a single_video action card.
 
-6. If user wants to schedule, ask for their preferred date/time and platforms."""
+8. If user wants to schedule, ask for their preferred date/time and platforms.
+
+EXAMPLE: If user says "I want to create a horror story series":
+Your response MUST include questions like: "How many parts?", "What horror subgenre?", "What's the main plot?", etc.
+Do NOT just say "Let's get some details" - actually ASK the details!"""
     
     def _parse_chat_response(self, response) -> ChatMessageResponse:
         """Parse OpenAI response into ChatMessageResponse."""
