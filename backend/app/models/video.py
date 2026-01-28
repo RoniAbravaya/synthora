@@ -277,6 +277,33 @@ class Video(Base, UUIDMixin, TimestampMixin):
         doc="Planning workflow status (none, planned, generating, ready, posting, posted, failed)"
     )
     
+    # Subtitle file
+    subtitle_file_url = Column(
+        Text,
+        nullable=True,
+        doc="URL to generated subtitle file (SRT/ASS) in cloud storage"
+    )
+    
+    # Generation timing for tracking and stuck detection
+    generation_started_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Timestamp when video generation actually started processing"
+    )
+    last_step_updated_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        doc="Last time a generation step was updated (for stuck job detection)"
+    )
+    
+    # Selected providers for this video
+    selected_providers = Column(
+        JSONB,
+        nullable=True,
+        doc="Providers selected for this video: {script, voice, media, video_ai, assembly}"
+    )
+    
     # Relationships
     user = relationship("User", back_populates="videos")
     template = relationship("Template", back_populates="videos")

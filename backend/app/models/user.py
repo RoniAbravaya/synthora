@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from app.models.ai_suggestion import AISuggestion
     from app.models.notification import Notification
     from app.models.ai_chat_session import AIChatSession
+    from app.models.user_generation_settings import UserGenerationSettings
 
 
 class UserRole(str, enum.Enum):
@@ -206,6 +207,12 @@ class User(Base):
     ai_chat_sessions = relationship(
         "AIChatSession",
         back_populates="user",
+        cascade="all, delete-orphan"
+    )
+    generation_settings = relationship(
+        "UserGenerationSettings",
+        back_populates="user",
+        uselist=False,
         cascade="all, delete-orphan"
     )
     
