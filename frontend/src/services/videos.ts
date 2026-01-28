@@ -177,5 +177,31 @@ export const videosService = {
     apiClient.put<Video>(`/videos/${id}/edit`, null, {
       params: data,
     }),
+
+  /**
+   * Get stuck videos (pending/processing for > 30 minutes).
+   */
+  getStuck: () =>
+    apiClient.get<{
+      stuck_videos: Array<{
+        id: string
+        title: string
+        status: string
+        created_at: string
+        updated_at: string
+      }>
+      stuck_count: number
+      has_active_generation: boolean
+      active_video_id: string | null
+    }>("/videos/stuck"),
+
+  /**
+   * Clear stuck videos by marking them as failed.
+   */
+  clearStuck: () =>
+    apiClient.post<{
+      cleared_count: number
+      message: string
+    }>("/videos/stuck/clear"),
 }
 
