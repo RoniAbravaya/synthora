@@ -12,47 +12,99 @@ Or with specific queues:
     python run_worker.py --queues video,default
 """
 
-# Print immediately to catch early startup issues
-print("=" * 60, flush=True)
-print("SYNTHORA WORKER STARTING", flush=True)
-print("=" * 60, flush=True)
-
-import os
+from __future__ import print_function
 import sys
 
-# Print Python info for debugging
-print(f"Python: {sys.version}", flush=True)
-print(f"Working directory: {os.getcwd()}", flush=True)
-print(f"Script location: {os.path.abspath(__file__)}", flush=True)
+# IMMEDIATELY print to both stdout and stderr to ensure we see something
+print("=" * 60)
+print("SYNTHORA WORKER SCRIPT STARTING")
+print("=" * 60)
+sys.stdout.flush()
+sys.stderr.write("Worker script is running\n")
+sys.stderr.flush()
+
+import os
+
+# Print environment info
+print(f"Python version: {sys.version}")
+print(f"Working directory: {os.getcwd()}")
+print(f"Script path: {os.path.abspath(__file__)}")
+print(f"Files in current dir: {os.listdir('.')[:10]}...")  # First 10 files
+sys.stdout.flush()
+
+# Check if app directory exists
+if os.path.exists('app'):
+    print("app/ directory exists")
+    print(f"  Contents: {os.listdir('app')[:10]}")
+else:
+    print("ERROR: app/ directory NOT FOUND!")
+    print(f"  Available dirs: {[d for d in os.listdir('.') if os.path.isdir(d)]}")
+sys.stdout.flush()
+
+# Check critical environment variables
+print("\nEnvironment variables check:")
+critical_vars = ['REDIS_URL', 'DATABASE_URL', 'APP_ENV', 'SECRET_KEY']
+for var in critical_vars:
+    value = os.environ.get(var)
+    if value:
+        # Mask sensitive values
+        if 'URL' in var or 'KEY' in var or 'SECRET' in var:
+            print(f"  {var}: SET (masked)")
+        else:
+            print(f"  {var}: {value}")
+    else:
+        print(f"  {var}: NOT SET!")
+sys.stdout.flush()
 
 # Ensure the app package is importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+print("\nImporting app modules...")
+sys.stdout.flush()
+
 try:
+    print("  Importing app.core.config...", end=" ")
+    sys.stdout.flush()
+    from app.core.config import get_settings
+    print("OK")
+    sys.stdout.flush()
+    
+    print("  Importing app.core.logging_config...", end=" ")
+    sys.stdout.flush()
+    from app.core.logging_config import setup_logging
+    print("OK")
+    sys.stdout.flush()
+    
+    print("  Loading settings...", end=" ")
+    sys.stdout.flush()
+    settings = get_settings()
+    print("OK")
+    sys.stdout.flush()
+    
+    print("  Setting up logging...", end=" ")
+    sys.stdout.flush()
     import logging
     import argparse
     
-    # Import and setup logging BEFORE any other imports
-    from app.core.config import get_settings
-    from app.core.logging_config import setup_logging
-    
-    settings = get_settings()
-    
-    # Setup logging with worker-specific prefix
     setup_logging(
         log_level=settings.LOG_LEVEL,
         log_format=settings.LOG_FORMAT,
         app_name="synthora-worker",
-        reduce_sqlalchemy_noise=True,  # Always reduce in worker
+        reduce_sqlalchemy_noise=True,
     )
+    print("OK")
+    sys.stdout.flush()
     
     logger = logging.getLogger(__name__)
-    print("Logging configured successfully", flush=True)
+    print("\nAll imports successful!")
+    sys.stdout.flush()
     
 except Exception as e:
-    print(f"FATAL: Failed to initialize worker: {e}", flush=True)
+    print(f"\nFATAL: Failed to initialize: {e}")
     import traceback
     traceback.print_exc()
+    sys.stdout.flush()
+    sys.stderr.flush()
     sys.exit(1)
 
 
