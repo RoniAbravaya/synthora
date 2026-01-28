@@ -1479,6 +1479,116 @@
 
 ---
 
+## 22. Modular Video Generation (Enhancement - Jan 2026)
+
+### 22.1 Database Migrations
+- [x] 22.1.1 Create migration 008: Update integration providers enum
+- [x] 22.1.2 Create migration 009: User generation settings table
+- [x] 22.1.3 Create migration 010: API request logs table
+- [x] 22.1.4 Create migration 011: Update videos table (subtitle, timing, providers)
+
+### 22.2 Backend Models
+- [x] 22.2.1 Update Integration model with modular providers enum
+  - `openai_gpt`, `openai_tts`, `openai_sora`, `anthropic`, `elevenlabs`, `pexels`, `ffmpeg`
+  - Provider categories, pricing, recommended models, display names
+- [x] 22.2.2 Create UserGenerationSettings model
+  - Default providers per category (script, voice, media, video_ai, assembly)
+  - Subtitle style preferences (classic, modern, bold, minimal)
+- [x] 22.2.3 Create APIRequestLog model
+  - Full request/response logging with sensitive data masking
+  - Linked to user, video, and generation step
+
+### 22.3 Provider Architecture
+- [x] 22.3.1 Create base provider classes (`backend/app/integrations/providers/base.py`)
+  - `BaseProvider`, `ScriptProvider`, `VoiceProvider`, `MediaProvider`, `VideoAIProvider`, `AssemblyProvider`
+  - `ProviderResult` dataclass with timing data
+  - `ProviderConfig` for configuration
+- [x] 22.3.2 Create provider factory (`backend/app/integrations/providers/factory.py`)
+  - Dynamic provider registration and instantiation
+  - Provider info retrieval with pricing
+
+### 22.4 Provider Implementations
+- [x] 22.4.1 Script providers:
+  - `OpenAIGPTProvider` - GPT-4o integration
+  - `AnthropicProvider` - Claude integration
+- [x] 22.4.2 Voice providers:
+  - `ElevenLabsProvider` - With character-level timing
+  - `OpenAITTSProvider` - With estimated timing
+- [x] 22.4.3 Media providers:
+  - `PexelsProvider` - Video and image search
+- [x] 22.4.4 Assembly providers:
+  - `FFmpegProvider` - With subtitle burning (ASS format)
+- [x] 22.4.5 Video AI providers (stubs):
+  - `OpenAISoraProvider`, `RunwayProvider`, `LumaProvider`
+
+### 22.5 Backend Services
+- [x] 22.5.1 Create UserGenerationSettingsService
+  - Get/create/update user settings
+  - Provider validation per category
+  - Effective provider resolution
+- [x] 22.5.2 Create SubtitleService
+  - SRT and ASS format generation
+  - Timing synchronization from voice providers
+  - Style configuration (classic, modern, bold, minimal)
+- [x] 22.5.3 Create APILoggingService
+  - Request/response logging with masking
+  - `@log_api_request` decorator
+- [x] 22.5.4 Create CostEstimationService
+  - Per-provider cost calculation
+  - Total cost estimation per video
+
+### 22.6 Pipeline Refactor
+- [x] 22.6.1 Create PipelineStateManager
+  - State machine for video generation
+  - Step tracking with timing
+  - Resume capability from failed step
+- [x] 22.6.2 Create ModularGenerationPipeline
+  - Provider factory integration
+  - User settings integration
+  - Subtitle generation integration
+  - Concurrency control (1 per user)
+- [x] 22.6.3 Create stuck job monitor
+  - 30-minute timeout detection
+  - Auto-cancel stuck jobs
+
+### 22.7 API Endpoints
+- [x] 22.7.1 User generation settings endpoints:
+  - `GET /settings/generation` - Get settings
+  - `PUT /settings/generation` - Update settings
+  - `GET /settings/generation/cost-estimate` - Cost estimation
+  - `GET /settings/generation/available-providers` - Available providers
+  - `GET /settings/generation/effective-providers` - Effective providers
+- [x] 22.7.2 Video action endpoints:
+  - `GET /videos/scheduled` - List scheduled videos
+  - `POST /videos/{id}/generate-now` - Trigger immediate generation
+  - `POST /videos/{id}/cancel` - Cancel in-progress generation
+  - `PUT /videos/{id}/reschedule` - Reschedule planned video
+  - `PUT /videos/{id}/edit` - Edit planned video
+- [x] 22.7.3 Admin API logs endpoints:
+  - `GET /admin/api-logs` - List logs with filters
+  - `GET /admin/api-logs/stats` - Provider statistics
+  - `GET /admin/api-logs/{id}` - Log detail
+  - `DELETE /admin/api-logs/cleanup` - Delete old logs
+
+### 22.8 Frontend
+- [x] 22.8.1 Create generationSettings service
+- [x] 22.8.2 Update videos service with new actions
+- [x] 22.8.3 Add Video Generation tab to Settings page
+  - Provider selection per category
+  - Subtitle style selection
+  - Cost estimation display
+- [x] 22.8.4 Update VideosPage with video actions
+  - Generate Now button for scheduled videos
+  - Cancel button for processing videos
+  - Retry button for failed videos
+  - Scheduled video badges
+
+### 22.9 Documentation
+- [x] 22.9.1 Update ai-overview.md with new architecture
+- [x] 22.9.2 Update todo-synthora.md checklist
+
+---
+
 ## Notes
 
 - Reference `ai-overview.md` for detailed specifications
