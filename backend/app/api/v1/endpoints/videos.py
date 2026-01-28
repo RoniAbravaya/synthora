@@ -421,6 +421,344 @@ async def delete_video(
 
 
 # =============================================================================
+# Scheduled Videos
+# =============================================================================
+
+@router.get("/scheduled", response_model=dict)
+async def list_scheduled_videos(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    List scheduled/planned videos for the current user.
+    
+    Returns videos with planning_status in: planned, generating, ready
+    
+    **Requires:** Authentication
+    """
+    from app.models.video import PlanningStatus
+    
+    video_service = VideoService(db)
+    
+    # Get videos in planning workflow
+    videos = db.query(Video).filter(
+        Video.user_id == user.id,
+        Video.planning_status.in_([
+            PlanningStatus.PLANNED.value,
+            PlanningStatus.GENERATING.value,
+            PlanningStatus.READY.value,
+        ])
+    ).order_by(Video.scheduled_post_time.asc()).offset(skip).limit(limit).all()
+    
+    total = db.query(Video).filter(
+        Video.user_id == user.id,
+        Video.planning_status.in_([
+            PlanningStatus.PLANNED.value,
+            PlanningStatus.GENERATING.value,
+            PlanningStatus.READY.value,
+        ])
+    ).count()
+    
+    return {
+        "videos": [_video_to_response(v) for v in videos],
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+    }
+
+
+# =============================================================================
+# Generate Now (for scheduled videos)
+# =============================================================================
+
+@router.post("/{video_id}/generate-now", response_model=dict)
+async def generate_video_now(
+    video_id: UUID,
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Trigger immediate generation for a scheduled video.
+    
+    Can be used to generate a video before its scheduled time.
+    
+    **Path Parameters:**
+    - `video_id`: UUID of the scheduled video
+    
+    **Requires:** Authentication (must own the video)
+    """
+    from app.models.video import PlanningStatus
+    from app.workers.video_scheduler import queue_video_generation
+    from datetime import datetime
+    
+    video_service = VideoService(db)
+    video = video_service.get_by_id(video_id)
+    
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video not found",
+        )
+    
+    if video.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this video",
+        )
+    
+    # Check if video is in planned status
+    if video.planning_status != PlanningStatus.PLANNED.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot generate video in status: {video.planning_status}",
+        )
+    
+    # Check concurrent generation limit
+    active = video_service.get_active_generation(user.id)
+    if active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have a video generating. Please wait for it to complete.",
+        )
+    
+    # Trigger generation
+    video.planning_status = PlanningStatus.GENERATING.value
+    video.generation_triggered_at = datetime.utcnow()
+    db.commit()
+    
+    job_id = queue_video_generation(
+        video_id=str(video.id),
+        user_id=str(video.user_id),
+        ai_suggestion_data=video.ai_suggestion_data,
+    )
+    
+    return {
+        "success": True,
+        "video_id": str(video.id),
+        "message": "Video generation triggered",
+        "job_id": job_id,
+    }
+
+
+# =============================================================================
+# Cancel Video
+# =============================================================================
+
+@router.post("/{video_id}/cancel", response_model=dict)
+async def cancel_video(
+    video_id: UUID,
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Cancel a video generation in progress.
+    
+    **Path Parameters:**
+    - `video_id`: UUID of the video
+    
+    **Requires:** Authentication (must own the video)
+    """
+    from app.models.video import PlanningStatus
+    
+    video_service = VideoService(db)
+    video = video_service.get_by_id(video_id)
+    
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video not found",
+        )
+    
+    if video.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to cancel this video",
+        )
+    
+    # Check if video can be cancelled
+    cancellable_statuses = ["pending", "processing"]
+    if video.status not in cancellable_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot cancel video in status: {video.status}",
+        )
+    
+    # Cancel the video
+    video.status = VideoStatus.CANCELLED.value
+    video.error_message = "Cancelled by user"
+    
+    if video.planning_status == PlanningStatus.GENERATING.value:
+        video.planning_status = PlanningStatus.FAILED.value
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "video_id": str(video.id),
+        "message": "Video generation cancelled",
+    }
+
+
+# =============================================================================
+# Reschedule Video
+# =============================================================================
+
+@router.put("/{video_id}/reschedule", response_model=dict)
+async def reschedule_video(
+    video_id: UUID,
+    scheduled_post_time: datetime = Query(..., description="New scheduled time"),
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Reschedule a planned video.
+    
+    **Path Parameters:**
+    - `video_id`: UUID of the video
+    
+    **Query Parameters:**
+    - `scheduled_post_time`: New scheduled post time
+    
+    **Requires:** Authentication (must own the video), Premium for scheduling
+    """
+    from app.models.video import PlanningStatus
+    
+    # Check premium for scheduling
+    if not user.is_premium:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Scheduling requires a premium subscription",
+        )
+    
+    video_service = VideoService(db)
+    video = video_service.get_by_id(video_id)
+    
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video not found",
+        )
+    
+    if video.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to reschedule this video",
+        )
+    
+    # Can only reschedule planned videos
+    if video.planning_status != PlanningStatus.PLANNED.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot reschedule video in status: {video.planning_status}",
+        )
+    
+    # Validate new time is in the future
+    if scheduled_post_time <= datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Scheduled time must be in the future",
+        )
+    
+    # Update scheduled time
+    video.scheduled_post_time = scheduled_post_time
+    video.generation_triggered_at = None  # Reset trigger
+    db.commit()
+    
+    return {
+        "success": True,
+        "video_id": str(video.id),
+        "new_scheduled_time": scheduled_post_time.isoformat(),
+        "message": "Video rescheduled",
+    }
+
+
+# =============================================================================
+# Edit Planned Video
+# =============================================================================
+
+@router.put("/{video_id}/edit", response_model=VideoResponse)
+async def edit_planned_video(
+    video_id: UUID,
+    title: Optional[str] = Query(None),
+    prompt: Optional[str] = Query(None),
+    template_id: Optional[UUID] = Query(None),
+    target_platforms: Optional[List[str]] = Query(None),
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Edit a planned video's details.
+    
+    Can only edit videos that haven't started generation yet.
+    
+    **Path Parameters:**
+    - `video_id`: UUID of the video
+    
+    **Query Parameters:**
+    - `title`: New title (optional)
+    - `prompt`: New prompt (optional)
+    - `template_id`: New template ID (optional)
+    - `target_platforms`: New target platforms (optional)
+    
+    **Requires:** Authentication (must own the video)
+    """
+    from app.models.video import PlanningStatus
+    
+    video_service = VideoService(db)
+    video = video_service.get_by_id(video_id)
+    
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video not found",
+        )
+    
+    if video.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to edit this video",
+        )
+    
+    # Can only edit planned videos
+    if video.planning_status != PlanningStatus.PLANNED.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot edit video in status: {video.planning_status}",
+        )
+    
+    # Apply updates
+    if title is not None:
+        video.title = title
+    
+    if prompt is not None:
+        video.prompt = prompt
+        # Also update in ai_suggestion_data if present
+        if video.ai_suggestion_data:
+            video.ai_suggestion_data["prompt"] = prompt
+    
+    if template_id is not None:
+        # Validate template
+        template_service = TemplateService(db)
+        template = template_service.get_by_id(template_id)
+        if not template:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Template not found",
+            )
+        video.template_id = template_id
+    
+    if target_platforms is not None:
+        video.target_platforms = target_platforms
+    
+    db.commit()
+    db.refresh(video)
+    
+    return _video_to_response(video)
+
+
+# =============================================================================
 # Download Video
 # =============================================================================
 

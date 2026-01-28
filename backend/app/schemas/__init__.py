@@ -199,6 +199,40 @@ from app.schemas.admin import (
     TemplateUsageItem,
     TemplateStatsResponse,
 )
+from app.schemas.user_generation_settings import (
+    ProviderInfo,
+    CategoryProviders,
+    SubtitleStyleInfo,
+    UserGenerationSettingsResponse,
+    UserGenerationSettingsUpdate,
+    CostBreakdownItem,
+    CostEstimateResponse,
+    AvailableProvidersResponse,
+    EffectiveProvidersResponse,
+)
+from app.schemas.video_actions import (
+    GenerateNowRequest,
+    GenerateNowResponse,
+    CancelVideoRequest,
+    CancelVideoResponse,
+    RetryVideoRequest,
+    RetryVideoResponse,
+    RescheduleVideoRequest,
+    RescheduleVideoResponse,
+    EditVideoRequest,
+    EditVideoResponse,
+    ScheduledVideoResponse,
+    ScheduledVideosListResponse,
+    VideoGenerationStatus,
+)
+from app.schemas.api_logs import (
+    APILogResponse,
+    APILogDetailResponse,
+    APILogsListResponse,
+    APILogsSearchParams,
+    ProviderStatsResponse,
+    AllProviderStatsResponse,
+)
 
 __all__ = [
     # Common
@@ -395,4 +429,38 @@ __all__ = [
     "SystemLimits",
     "TemplateUsageItem",
     "TemplateStatsResponse",
+    
+    # User Generation Settings
+    "ProviderInfo",
+    "CategoryProviders",
+    "SubtitleStyleInfo",
+    "UserGenerationSettingsResponse",
+    "UserGenerationSettingsUpdate",
+    "CostBreakdownItem",
+    "CostEstimateResponse",
+    "AvailableProvidersResponse",
+    "EffectiveProvidersResponse",
+    
+    # Video Actions
+    "GenerateNowRequest",
+    "GenerateNowResponse",
+    "CancelVideoRequest",
+    "CancelVideoResponse",
+    "RetryVideoRequest",
+    "RetryVideoResponse",
+    "RescheduleVideoRequest",
+    "RescheduleVideoResponse",
+    "EditVideoRequest",
+    "EditVideoResponse",
+    "ScheduledVideoResponse",
+    "ScheduledVideosListResponse",
+    "VideoGenerationStatus",
+    
+    # API Logs
+    "APILogResponse",
+    "APILogDetailResponse",
+    "APILogsListResponse",
+    "APILogsSearchParams",
+    "ProviderStatsResponse",
+    "AllProviderStatsResponse",
 ]

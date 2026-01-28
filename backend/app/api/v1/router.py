@@ -25,6 +25,8 @@ from app.api.v1.endpoints import (
     health,
     ai_chat,
     video_planning,
+    generation_settings,
+    api_logs,
 )
 
 # Create main API router
@@ -77,3 +79,9 @@ api_router.include_router(subscriptions.router)
 
 # Admin endpoints
 api_router.include_router(admin.router)
+
+# User generation settings endpoints
+api_router.include_router(generation_settings.router)
+
+# API logs admin endpoints
+api_router.include_router(api_logs.router)
