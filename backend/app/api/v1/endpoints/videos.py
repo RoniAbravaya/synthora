@@ -88,8 +88,12 @@ async def get_stuck_videos(
     """
     Get videos that appear to be stuck (pending/processing for > 30 minutes).
     
+    This endpoint helps diagnose why video generation might be blocked.
+    
     **Requires:** Authentication
     """
+    from datetime import datetime, timedelta
+    
     video_service = VideoService(db)
     stuck = video_service.get_stuck_videos(user.id)
     active = video_service.get_active_generation(user.id)
@@ -100,32 +104,78 @@ async def get_stuck_videos(
         Video.status.in_(["pending", "processing"]),
     ).all()
     
+    now = datetime.utcnow()
+    stuck_threshold = now - timedelta(minutes=30)
+    
+    # Log this request for debugging
+    logger.info(f"Stuck videos check for user {user.id}: "
+                f"stuck={len(stuck)}, pending={len(all_pending)}, "
+                f"has_active={active is not None}")
+    
+    def video_to_debug_dict(v: Video) -> dict:
+        """Convert video to debug dict with timing info."""
+        age_minutes = (now - v.created_at).total_seconds() / 60 if v.created_at else None
+        last_update_minutes = (now - v.updated_at).total_seconds() / 60 if v.updated_at else None
+        is_blocking = v.updated_at > stuck_threshold if v.updated_at else False
+        
+        return {
+            "id": str(v.id),
+            "title": v.title,
+            "status": v.status,
+            "current_step": v.current_step,
+            "progress": v.progress,
+            "error_message": v.error_message,
+            "created_at": v.created_at.isoformat() if v.created_at else None,
+            "updated_at": v.updated_at.isoformat() if v.updated_at else None,
+            "age_minutes": round(age_minutes, 1) if age_minutes else None,
+            "last_update_minutes": round(last_update_minutes, 1) if last_update_minutes else None,
+            "is_blocking_new_generation": is_blocking,
+            "planning_status": v.planning_status,
+            "generation_triggered_at": v.generation_triggered_at.isoformat() if v.generation_triggered_at else None,
+        }
+    
     return {
-        "stuck_videos": [
-            {
-                "id": str(v.id),
-                "title": v.title,
-                "status": v.status,
-                "created_at": str(v.created_at),
-                "updated_at": str(v.updated_at),
-            }
-            for v in stuck
-        ],
+        "stuck_videos": [video_to_debug_dict(v) for v in stuck],
         "stuck_count": len(stuck),
         "has_active_generation": active is not None,
         "active_video_id": str(active.id) if active else None,
-        "all_pending_processing": [
-            {
-                "id": str(v.id),
-                "title": v.title,
-                "status": v.status,
-                "created_at": str(v.created_at),
-                "updated_at": str(v.updated_at),
-            }
-            for v in all_pending
-        ],
+        "active_video_details": video_to_debug_dict(active) if active else None,
+        "all_pending_processing": [video_to_debug_dict(v) for v in all_pending],
         "all_pending_count": len(all_pending),
+        "stuck_threshold_minutes": 30,
+        "current_time": now.isoformat(),
+        "diagnosis": _diagnose_stuck_state(stuck, all_pending, active),
     }
+
+
+def _diagnose_stuck_state(
+    stuck: list,
+    all_pending: list,
+    active: Optional[Video],
+) -> str:
+    """Generate a human-readable diagnosis of the stuck state."""
+    if not all_pending and not active:
+        return "No pending or processing videos. You should be able to generate new videos."
+    
+    if active and not stuck:
+        return (
+            f"Video {active.id} is actively generating (updated within 30 min). "
+            "Wait for it to complete or use /videos/{id}/cancel to cancel it."
+        )
+    
+    if stuck and not active:
+        return (
+            f"{len(stuck)} video(s) are stuck (no updates for 30+ min). "
+            "Use POST /videos/stuck/clear to mark them as failed and unblock generation."
+        )
+    
+    if all_pending and not active:
+        return (
+            f"{len(all_pending)} video(s) in pending/processing but none blocking. "
+            "This may be a timing issue. Try using POST /videos/stuck/clear?force_all=true"
+        )
+    
+    return "Unknown state. Contact support if issues persist."
 
 
 @router.post("/stuck/clear", response_model=dict)
@@ -145,6 +195,8 @@ async def clear_stuck_videos(
     """
     video_service = VideoService(db)
     
+    logger.info(f"Clear stuck videos request from user {user.id}, force_all={force_all}")
+    
     if force_all:
         # Clear ALL pending/processing videos
         all_pending = db.query(Video).filter(
@@ -152,23 +204,28 @@ async def clear_stuck_videos(
             Video.status.in_(["pending", "processing"]),
         ).all()
         
-        count = 0
+        cleared_ids = []
         for video in all_pending:
+            logger.info(f"Force-clearing video {video.id}: status={video.status}, "
+                       f"updated_at={video.updated_at}")
             video.status = "failed"
             video.error_message = "Manually cancelled by user"
             video.updated_at = datetime.utcnow()
-            count += 1
+            cleared_ids.append(str(video.id))
         
-        if count > 0:
+        if cleared_ids:
             db.commit()
+            logger.info(f"Force-cleared {len(cleared_ids)} videos for user {user.id}: {cleared_ids}")
         
         return {
-            "cleared_count": count,
-            "message": f"Force-cleared {count} video(s)",
+            "cleared_count": len(cleared_ids),
+            "cleared_video_ids": cleared_ids,
+            "message": f"Force-cleared {len(cleared_ids)} video(s)",
         }
     else:
         # Only clear stuck videos (>30 min old)
         cleared_count = video_service.clear_stuck_videos(user.id)
+        logger.info(f"Cleared {cleared_count} stuck videos for user {user.id}")
         
         return {
             "cleared_count": cleared_count,
@@ -346,6 +403,7 @@ async def generate_video(
     # Check daily limit
     can_generate, reason = limits_service.can_generate_video(user.id)
     if not can_generate:
+        logger.warning(f"429: User {user.id} exceeded daily limit: {reason}")
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=reason,
@@ -354,6 +412,11 @@ async def generate_video(
     # Check concurrent generation limit
     active = video_service.get_active_generation(user.id)
     if active:
+        logger.warning(
+            f"409 Conflict: User {user.id} tried to generate but has active video "
+            f"(id={active.id}, status={active.status}, updated_at={active.updated_at}, "
+            f"current_step={active.current_step})"
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="You already have a video generating. Please wait for it to complete.",
@@ -459,10 +522,16 @@ async def retry_video(
     # Check concurrent limit
     active = video_service.get_active_generation(user.id)
     if active and active.id != video.id:
+        logger.warning(
+            f"409 Conflict on retry: User {user.id} has active video "
+            f"(id={active.id}, status={active.status}) blocking retry of {video_id}"
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="You already have a video generating",
         )
+    
+    logger.info(f"Retrying video {video_id} for user {user.id}")
     
     # Enqueue retry job
     scheduler = get_scheduler()
@@ -618,10 +687,16 @@ async def generate_video_now(
     # Check concurrent generation limit
     active = video_service.get_active_generation(user.id)
     if active:
+        logger.warning(
+            f"409 Conflict on generate-now: User {user.id} has active video "
+            f"(id={active.id}, status={active.status}) blocking generation of {video_id}"
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="You already have a video generating. Please wait for it to complete.",
         )
+    
+    logger.info(f"Triggering immediate generation for scheduled video {video_id}")
     
     # Trigger generation
     video.planning_status = PlanningStatus.GENERATING.value

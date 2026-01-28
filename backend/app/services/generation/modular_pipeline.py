@@ -31,6 +31,7 @@ from app.services.integration import IntegrationService
 from app.services.notification import NotificationService
 from app.integrations.providers.factory import ProviderFactory, get_provider
 from app.integrations.providers.base import ProviderConfig, ProviderResult
+from app.core.logging_config import VideoGenerationLogger
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,9 @@ class ModularGenerationPipeline:
         self.video = video
         self.config = config
         
+        # Structured logger for this video
+        self.vlog = VideoGenerationLogger(str(video.id), str(video.user_id))
+        
         # Services
         self.state_manager = PipelineStateManager(db, video)
         self.settings_service = UserGenerationSettingsService(db)
@@ -145,6 +149,7 @@ class ModularGenerationPipeline:
         self._providers: Dict[str, str] = {}
         self._temp_dir: Optional[str] = None
         self._subtitle_file: Optional[str] = None
+        self._start_time: Optional[float] = None
     
     async def run(self, resume: bool = False) -> bool:
         """
@@ -156,13 +161,21 @@ class ModularGenerationPipeline:
         Returns:
             True if generation completed successfully
         """
+        self._start_time = time.time()
+        
         try:
+            self.vlog.start("pipeline_init")
+            
             # Check concurrency
             if not resume:
+                self.vlog.debug("Checking concurrency limits...")
                 self._check_concurrency()
+                self.vlog.progress("pipeline_init", 5, "Concurrency check passed")
             
             # Load providers
+            self.vlog.debug("Loading providers from user settings...")
             self._load_providers()
+            self.vlog.progress("pipeline_init", 10, f"Providers loaded: {self._providers}")
             
             # Save selected providers to video
             self.video.selected_providers = self._providers
@@ -172,14 +185,17 @@ class ModularGenerationPipeline:
             if resume:
                 self.state_manager.load_previous_state()
                 start_step_index = self._get_resume_index()
+                self.vlog.progress("pipeline_init", 15, f"Resuming from step index {start_step_index}")
             else:
                 self.state_manager.initialize()
                 start_step_index = 0
+                self.vlog.progress("pipeline_init", 15, "State initialized for new generation")
             
             logger.info(f"Starting pipeline for video {self.video.id} from step {start_step_index}")
             
             # Create temp directory
             self._temp_dir = tempfile.mkdtemp(prefix="synthora_gen_")
+            self.vlog.debug(f"Temp directory created: {self._temp_dir}")
             
             # Execute steps
             steps = [
@@ -190,8 +206,11 @@ class ModularGenerationPipeline:
                 (GenerationStep.ASSEMBLY, self._execute_assembly),
             ]
             
+            total_steps = len(steps)
+            
             for i, (step, executor) in enumerate(steps):
                 if i < start_step_index:
+                    self.vlog.skip(step.value, "Already completed in previous run")
                     continue
                 
                 # Check if cancelled or deleted
@@ -201,12 +220,33 @@ class ModularGenerationPipeline:
                 if self.state_manager.is_video_deleted():
                     raise VideoNotFoundError("Video was deleted during generation")
                 
+                # Calculate progress
+                base_progress = 20 + (i * 15)  # 20% base, 15% per step
+                
                 # Execute step
+                step_start = time.time()
+                self.vlog.start(step.value)
                 self.state_manager.start_step(step)
                 
-                result = await executor()
+                try:
+                    result = await executor()
+                except Exception as step_error:
+                    step_elapsed = time.time() - step_start
+                    self.vlog.error(
+                        step.value,
+                        str(step_error),
+                        {"duration_seconds": step_elapsed, "exception_type": type(step_error).__name__}
+                    )
+                    raise
+                
+                step_elapsed = time.time() - step_start
                 
                 if not result.success:
+                    self.vlog.error(
+                        step.value,
+                        result.error or "Unknown error",
+                        {"duration_seconds": step_elapsed, "details": result.error_details}
+                    )
                     self.state_manager.fail_step(
                         step,
                         result.error,
@@ -215,10 +255,16 @@ class ModularGenerationPipeline:
                     self._send_failure_notification(step, result.error)
                     return False
                 
+                self.vlog.complete(
+                    step.value,
+                    {"duration_seconds": round(step_elapsed, 2), "provider": result.provider_name}
+                )
                 self.state_manager.complete_step(step, result.data)
             
             # Complete pipeline
             assembly_result = self.state_manager.get_step_result(GenerationStep.ASSEMBLY)
+            
+            total_elapsed = time.time() - self._start_time
             
             self.state_manager.complete_pipeline(
                 video_url=assembly_result.get("video_url", ""),
@@ -229,10 +275,12 @@ class ModularGenerationPipeline:
                 subtitle_url=self._subtitle_file,
             )
             
-            logger.info(f"Pipeline completed successfully for video {self.video.id}")
+            self.vlog.generation_complete(total_elapsed)
+            logger.info(f"Pipeline completed successfully for video {self.video.id} in {total_elapsed:.1f}s")
             return True
             
         except ConcurrencyError as e:
+            self.vlog.error("concurrency", str(e))
             logger.warning(f"Concurrency error for video {self.video.id}: {e}")
             self.state_manager.fail_step(
                 GenerationStep.SCRIPT,
@@ -242,14 +290,18 @@ class ModularGenerationPipeline:
             return False
             
         except VideoCancelledError:
+            self.vlog.warning("Video generation was cancelled by user")
             logger.info(f"Video {self.video.id} was cancelled")
             return False
             
         except VideoNotFoundError:
+            self.vlog.warning("Video was deleted during generation")
             logger.info(f"Video {self.video.id} was deleted")
             return False
             
         except Exception as e:
+            total_elapsed = time.time() - self._start_time if self._start_time else 0
+            self.vlog.generation_failed(str(e), self.video.current_step)
             logger.exception(f"Pipeline error for video {self.video.id}: {e}")
             
             # Try to update state
@@ -262,8 +314,8 @@ class ModularGenerationPipeline:
                     self.video.status = VideoStatus.FAILED.value
                     self.video.error_message = str(e)
                     self.db.commit()
-            except Exception:
-                pass
+            except Exception as state_err:
+                logger.error(f"Failed to update state after error: {state_err}")
             
             return False
             

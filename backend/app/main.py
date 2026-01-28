@@ -21,17 +21,19 @@ from fastapi.exceptions import RequestValidationError
 
 from app.core.config import get_settings
 from app.core.database import check_database_connection, get_database_info
+from app.core.logging_config import setup_logging
 from app.api.v1.router import api_router
 
 # Get settings
 settings = get_settings()
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    if settings.LOG_FORMAT == "text"
-    else '{"time": "%(asctime)s", "name": "%(name)s", "level": "%(levelname)s", "message": "%(message)s"}'
+# Configure logging using centralized configuration
+# This reduces SQLAlchemy noise and ensures logs go to stdout
+setup_logging(
+    log_level=settings.LOG_LEVEL,
+    log_format=settings.LOG_FORMAT,
+    app_name="synthora-api",
+    reduce_sqlalchemy_noise=settings.is_production or not settings.DEBUG,
 )
 logger = logging.getLogger(__name__)
 

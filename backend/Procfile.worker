@@ -1,2 +1,2 @@
-worker: rq worker --url $REDIS_URL synthora
+worker: python run_worker.py --queues video,default,analytics,posts,cleanup
 

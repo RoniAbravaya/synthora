@@ -2,10 +2,12 @@
 Video Generation Worker
 
 Background worker for processing video generation jobs.
+This is the main entry point for video generation in the RQ worker.
 """
 
 import logging
 import asyncio
+import time
 from typing import Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
@@ -14,6 +16,7 @@ from rq import get_current_job
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
+from app.core.logging_config import VideoGenerationLogger
 from app.services.video import VideoService
 from app.services.template import TemplateService
 from app.services.generation.pipeline import GenerationPipeline, PipelineConfig
@@ -50,10 +53,22 @@ def process_video_generation(
     Returns:
         Dictionary with job result
     """
-    logger.info(f"Starting video generation job for video {video_id}")
+    # Create structured logger for this video
+    vlog = VideoGenerationLogger(video_id, user_id)
+    start_time = time.time()
+    
+    logger.info("=" * 60)
+    logger.info(f"VIDEO GENERATION STARTED")
+    logger.info(f"  Video ID: {video_id}")
+    logger.info(f"  User ID: {user_id}")
+    logger.info(f"  Prompt: {prompt[:100]}..." if len(prompt) > 100 else f"  Prompt: {prompt}")
+    logger.info(f"  Template: {template_id or 'None'}")
+    logger.info("=" * 60)
     
     # Get RQ job for progress tracking
     rq_job = get_current_job()
+    if rq_job:
+        logger.info(f"RQ Job ID: {rq_job.id}")
     
     db = get_db()
     
@@ -63,11 +78,13 @@ def process_video_generation(
         video = video_service.get_by_id(UUID(video_id))
         
         if not video:
-            logger.error(f"Video not found: {video_id}")
+            vlog.error("init", "Video not found in database")
             return {
                 "success": False,
                 "error": "Video not found",
             }
+        
+        vlog.progress("init", 5, f"Video record loaded, current status: {video.status}")
         
         # Get template configuration if specified
         template_config = {}
@@ -76,6 +93,9 @@ def process_video_generation(
             template = template_service.get_by_id(UUID(template_id))
             if template:
                 template_config = template_service.get_template_config(template)
+                vlog.progress("init", 10, f"Template loaded: {template.name}")
+            else:
+                vlog.warning(f"Template {template_id} not found, proceeding without template")
         
         # Build pipeline config
         pipeline_config = PipelineConfig(
@@ -90,37 +110,64 @@ def process_video_generation(
             for key, value in config_overrides.items():
                 if hasattr(pipeline_config, key):
                     setattr(pipeline_config, key, value)
+                    vlog.debug(f"Config override applied: {key}={value}")
+        
+        vlog.progress("init", 15, "Pipeline configuration ready")
         
         # Create and run pipeline
         pipeline = GenerationPipeline(db, video, pipeline_config)
         
+        vlog.start("pipeline")
+        
         # Run the async pipeline
         success = asyncio.run(pipeline.run())
+        
+        elapsed = time.time() - start_time
         
         # Update RQ job meta
         if rq_job:
             rq_job.meta["video_id"] = video_id
             rq_job.meta["completed_at"] = datetime.utcnow().isoformat()
+            rq_job.meta["duration_seconds"] = elapsed
             rq_job.save_meta()
         
         if success:
-            logger.info(f"Video generation completed: {video_id}")
+            vlog.generation_complete(elapsed)
+            logger.info("=" * 60)
+            logger.info(f"VIDEO GENERATION COMPLETED SUCCESSFULLY")
+            logger.info(f"  Video ID: {video_id}")
+            logger.info(f"  Duration: {elapsed:.1f} seconds")
+            logger.info("=" * 60)
             return {
                 "success": True,
                 "video_id": video_id,
                 "status": "completed",
+                "duration_seconds": elapsed,
             }
         else:
-            logger.error(f"Video generation failed: {video_id}")
+            # Refresh video to get latest error
+            db.refresh(video)
+            error_msg = video.error_message or "Unknown error"
+            vlog.generation_failed(error_msg, video.current_step)
+            logger.error("=" * 60)
+            logger.error(f"VIDEO GENERATION FAILED")
+            logger.error(f"  Video ID: {video_id}")
+            logger.error(f"  Error: {error_msg}")
+            logger.error(f"  Failed at step: {video.current_step}")
+            logger.error(f"  Duration: {elapsed:.1f} seconds")
+            logger.error("=" * 60)
             return {
                 "success": False,
                 "video_id": video_id,
                 "status": "failed",
-                "error": video.error_message,
+                "error": error_msg,
+                "failed_step": video.current_step,
             }
             
     except Exception as e:
-        logger.exception(f"Video generation error: {video_id}")
+        elapsed = time.time() - start_time
+        vlog.generation_failed(str(e))
+        logger.exception(f"VIDEO GENERATION EXCEPTION: {video_id}")
         
         # Update video status
         try:
@@ -129,19 +176,25 @@ def process_video_generation(
                 video_service.fail_video(
                     video,
                     str(e),
-                    {"exception_type": type(e).__name__},
+                    {
+                        "exception_type": type(e).__name__,
+                        "exception_message": str(e),
+                    },
                 )
-        except Exception:
-            pass
+                logger.info(f"Video {video_id} marked as failed in database")
+        except Exception as db_err:
+            logger.error(f"Failed to update video status in database: {db_err}")
         
         return {
             "success": False,
             "video_id": video_id,
             "error": str(e),
+            "exception_type": type(e).__name__,
         }
         
     finally:
         db.close()
+        logger.info(f"Database session closed for video {video_id}")
 
 
 def retry_video_generation(

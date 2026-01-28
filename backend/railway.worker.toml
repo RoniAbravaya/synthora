@@ -9,8 +9,8 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile.worker"
 
 [deploy]
-# Start command - run RQ worker with shell for variable expansion
-startCommand = "sh -c 'python -m rq.cli worker --url ${REDIS_URL} video default analytics posts cleanup'"
+# Start command - run RQ worker with proper logging configuration
+startCommand = "python run_worker.py --queues video,default,analytics,posts,cleanup"
 
 # Explicitly disable healthcheck - worker is not an HTTP service
 healthcheckPath = ""

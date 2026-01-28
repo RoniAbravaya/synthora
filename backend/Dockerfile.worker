@@ -49,6 +49,6 @@ WORKDIR /app
 # Copy application code
 COPY . .
 
-# Default command - run RQ worker
+# Default command - run RQ worker with proper logging configuration
 # Railway will use the startCommand from railway.worker.toml instead
-CMD ["sh", "-c", "python -m rq.cli worker --url $REDIS_URL video default analytics posts cleanup"]
+CMD ["python", "run_worker.py", "--queues", "video,default,analytics,posts,cleanup"]
