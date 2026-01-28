@@ -132,6 +132,13 @@ export interface Video {
   created_at: string
   completed_at: string | null
   expires_at: string | null
+  // Planning fields (for scheduled/AI-generated videos)
+  planning_status?: string | null
+  scheduled_post_time?: string | null
+  series_name?: string | null
+  series_order?: number | null
+  target_platforms?: string[]
+  ai_suggestion_data?: Record<string, unknown> | null
 }
 
 export interface VideoGenerationRequest {

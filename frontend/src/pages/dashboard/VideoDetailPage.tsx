@@ -20,9 +20,13 @@ import {
   AlertTriangle,
   Copy,
   ExternalLink,
+  Play,
+  Sparkles,
+  Calendar,
 } from "lucide-react"
 import { cn, formatRelativeTime, formatDuration } from "@/lib/utils"
 import { useVideo, useVideoStatus, useRetryVideo, useDeleteVideo } from "@/hooks/useVideos"
+import { useTriggerGeneration } from "@/hooks/useVideoPlanning"
 import { videosService } from "@/services/videos"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -186,6 +190,7 @@ export default function VideoDetailPage() {
   const { data: statusData } = useVideoStatus(id!, !!id)
   const retryMutation = useRetryVideo()
   const deleteMutation = useDeleteVideo()
+  const triggerGenerationMutation = useTriggerGeneration()
 
   const video = videoData?.video
   const status = statusData || video
@@ -193,6 +198,16 @@ export default function VideoDetailPage() {
   const handleRetry = async () => {
     if (!id) return
     await retryMutation.mutateAsync(id)
+  }
+
+  const handleGenerateNow = async () => {
+    if (!id) return
+    try {
+      await triggerGenerationMutation.mutateAsync(id)
+      toast.success("Video generation started!")
+    } catch (error) {
+      toast.error("Failed to start generation")
+    }
   }
 
   const handleDelete = async () => {
@@ -288,6 +303,22 @@ export default function VideoDetailPage() {
             </Link>
           </div>
         )}
+        {currentStatus === "pending" && (
+          <div className="flex gap-2">
+            <Button 
+              onClick={handleGenerateNow}
+              disabled={triggerGenerationMutation.isPending}
+              className="gap-2"
+            >
+              {triggerGenerationMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4" />
+              )}
+              Generate Now
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -312,6 +343,41 @@ export default function VideoDetailPage() {
                     <p className="text-sm text-muted-foreground">
                       {Math.round(progress)}% complete
                     </p>
+                  </div>
+                ) : currentStatus === "pending" ? (
+                  <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+                    {video.planning_status === "planned" ? (
+                      <>
+                        <Calendar className="h-12 w-12 text-primary/70" />
+                        <p className="mt-4 text-lg font-medium">Scheduled Video</p>
+                        <p className="text-sm text-muted-foreground">
+                          {video.scheduled_post_time 
+                            ? `Scheduled for ${formatRelativeTime(video.scheduled_post_time)}`
+                            : "Waiting to be generated"
+                          }
+                        </p>
+                        <Button 
+                          className="mt-4 gap-2"
+                          onClick={handleGenerateNow}
+                          disabled={triggerGenerationMutation.isPending}
+                        >
+                          {triggerGenerationMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Play className="h-4 w-4" />
+                          )}
+                          Generate Now
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="h-12 w-12 text-muted-foreground/50" />
+                        <p className="mt-4 text-lg font-medium">Pending</p>
+                        <p className="text-sm text-muted-foreground">
+                          Waiting to start generation
+                        </p>
+                      </>
+                    )}
                   </div>
                 ) : video.thumbnail_url ? (
                   <img
@@ -418,12 +484,62 @@ export default function VideoDetailPage() {
             </Card>
           )}
 
+          {/* Planning Info Card (for scheduled videos) */}
+          {video.planning_status && video.planning_status !== "none" && (
+            <Card className="border-primary/20 bg-primary/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  AI Planned Video
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Planning Status</span>
+                  <span className="font-medium capitalize">{video.planning_status}</span>
+                </div>
+                {video.scheduled_post_time && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Scheduled For</span>
+                    <span>{formatRelativeTime(video.scheduled_post_time)}</span>
+                  </div>
+                )}
+                {video.series_name && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Series</span>
+                    <span>{video.series_name} {video.series_order ? `Part ${video.series_order}` : ""}</span>
+                  </div>
+                )}
+                {video.target_platforms && video.target_platforms.length > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Platforms</span>
+                    <span className="capitalize">{video.target_platforms.join(", ")}</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Actions Card */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
+              {currentStatus === "pending" && (
+                <Button
+                  className="w-full"
+                  onClick={handleGenerateNow}
+                  disabled={triggerGenerationMutation.isPending}
+                >
+                  {triggerGenerationMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="mr-2 h-4 w-4" />
+                  )}
+                  Generate Now
+                </Button>
+              )}
               {currentStatus === "failed" && (
                 <Button
                   variant="outline"
