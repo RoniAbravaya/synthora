@@ -94,6 +94,12 @@ async def get_stuck_videos(
     stuck = video_service.get_stuck_videos(user.id)
     active = video_service.get_active_generation(user.id)
     
+    # Also get ALL videos in pending/processing status for debugging
+    all_pending = db.query(Video).filter(
+        Video.user_id == user.id,
+        Video.status.in_(["pending", "processing"]),
+    ).all()
+    
     return {
         "stuck_videos": [
             {
@@ -108,11 +114,23 @@ async def get_stuck_videos(
         "stuck_count": len(stuck),
         "has_active_generation": active is not None,
         "active_video_id": str(active.id) if active else None,
+        "all_pending_processing": [
+            {
+                "id": str(v.id),
+                "title": v.title,
+                "status": v.status,
+                "created_at": str(v.created_at),
+                "updated_at": str(v.updated_at),
+            }
+            for v in all_pending
+        ],
+        "all_pending_count": len(all_pending),
     }
 
 
 @router.post("/stuck/clear", response_model=dict)
 async def clear_stuck_videos(
+    force_all: bool = Query(default=False, description="Clear ALL pending/processing videos, not just stuck ones"),
     user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -120,15 +138,42 @@ async def clear_stuck_videos(
     Clear stuck videos by marking them as failed.
     This unblocks new video generation.
     
+    **Query Parameters:**
+    - `force_all`: If true, clears ALL pending/processing videos (not just >30 min old)
+    
     **Requires:** Authentication
     """
     video_service = VideoService(db)
-    cleared_count = video_service.clear_stuck_videos(user.id)
     
-    return {
-        "cleared_count": cleared_count,
-        "message": f"Cleared {cleared_count} stuck video(s)",
-    }
+    if force_all:
+        # Clear ALL pending/processing videos
+        all_pending = db.query(Video).filter(
+            Video.user_id == user.id,
+            Video.status.in_(["pending", "processing"]),
+        ).all()
+        
+        count = 0
+        for video in all_pending:
+            video.status = "failed"
+            video.error_message = "Manually cancelled by user"
+            video.updated_at = datetime.utcnow()
+            count += 1
+        
+        if count > 0:
+            db.commit()
+        
+        return {
+            "cleared_count": count,
+            "message": f"Force-cleared {count} video(s)",
+        }
+    else:
+        # Only clear stuck videos (>30 min old)
+        cleared_count = video_service.clear_stuck_videos(user.id)
+        
+        return {
+            "cleared_count": cleared_count,
+            "message": f"Cleared {cleared_count} stuck video(s)",
+        }
 
 
 # =============================================================================
