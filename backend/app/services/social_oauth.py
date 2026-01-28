@@ -144,6 +144,7 @@ class SocialOAuthService:
         user_id: UUID,
         platform: SocialPlatform,
         platform_user_id: str,
+        include_inactive: bool = True,
     ) -> Optional[SocialAccount]:
         """
         Get a social account by platform user ID.
@@ -152,17 +153,23 @@ class SocialOAuthService:
             user_id: User's UUID
             platform: Social platform
             platform_user_id: Platform-specific user ID
+            include_inactive: If True, includes disconnected/revoked accounts
             
         Returns:
             SocialAccount if found
         """
         # Handle both enum and string values
         platform_value = platform.value if hasattr(platform, 'value') else platform
-        return self.db.query(SocialAccount).filter(
+        query = self.db.query(SocialAccount).filter(
             SocialAccount.user_id == user_id,
             SocialAccount.platform == platform_value,
             SocialAccount.platform_user_id == platform_user_id,
-        ).first()
+        )
+        
+        if not include_inactive:
+            query = query.filter(SocialAccount.is_active == True)
+        
+        return query.first()
     
     def create_or_update_account(
         self,
@@ -208,7 +215,9 @@ class SocialOAuthService:
         platform_str = platform.value if hasattr(platform, 'value') else platform
         
         if account:
-            # Update existing account
+            # Update existing account (may have been previously disconnected)
+            was_inactive = not account.is_active
+            
             account.username = username
             account.access_token_encrypted = encrypted_access
             account.refresh_token_encrypted = encrypted_refresh
@@ -221,7 +230,10 @@ class SocialOAuthService:
             account.is_active = True
             account.last_used_at = datetime.now(timezone.utc)
             
-            logger.info(f"Updated social account: {platform_str}/{username}")
+            if was_inactive:
+                logger.info(f"Reactivated previously disconnected social account: {platform_str}/{username}")
+            else:
+                logger.info(f"Updated social account: {platform_str}/{username}")
         else:
             # Create new account
             account = SocialAccount(
@@ -248,19 +260,33 @@ class SocialOAuthService:
         
         return account
     
-    def disconnect_account(self, account: SocialAccount) -> None:
+    def disconnect_account(self, account: SocialAccount, hard_delete: bool = False) -> None:
         """
         Disconnect a social account.
         
+        By default, this soft-disconnects the account (marks as inactive/revoked)
+        to preserve associated posts and analytics data.
+        
         Args:
             account: SocialAccount to disconnect
+            hard_delete: If True, permanently delete the account and all associated data
         """
         account_info = f"{account.platform}/{account.username}"
         
-        self.db.delete(account)
-        self.db.commit()
+        if hard_delete:
+            # Permanently delete account - cascades to posts and analytics
+            self.db.delete(account)
+            logger.info(f"Hard deleted social account: {account_info}")
+        else:
+            # Soft disconnect - preserve posts and analytics
+            account.is_active = False
+            account.status = "revoked"
+            account.access_token_encrypted = ""  # Clear tokens for security
+            account.refresh_token_encrypted = None
+            account.token_expires_at = None
+            logger.info(f"Soft disconnected social account: {account_info}")
         
-        logger.info(f"Disconnected social account: {account_info}")
+        self.db.commit()
     
     # =========================================================================
     # Token Management

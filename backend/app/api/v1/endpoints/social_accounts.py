@@ -104,15 +104,22 @@ def get_oauth_config(platform: str) -> Optional[Dict[str, Any]]:
 @router.get("")
 async def list_social_accounts(
     platform: Optional[str] = Query(default=None),
+    include_disconnected: bool = Query(default=False, description="Include disconnected accounts"),
     user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     List all connected social accounts for the current user.
+    
+    By default, only shows active (connected) accounts.
+    Set include_disconnected=True to see all accounts including disconnected ones.
     """
     query = db.query(SocialAccount).filter(
         SocialAccount.user_id == user.id
     )
+    
+    if not include_disconnected:
+        query = query.filter(SocialAccount.is_active == True)
     
     if platform:
         query = query.filter(SocialAccount.platform == platform)
@@ -604,16 +611,27 @@ async def oauth_callback_manual(
 @router.delete("/{account_id}")
 async def disconnect_account(
     account_id: UUID,
+    hard_delete: bool = Query(
+        default=False, 
+        description="If True, permanently delete account and all associated posts/analytics. Default: soft disconnect (preserves data)."
+    ),
     user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Disconnect a social account.
     
-    This will also remove any posts and analytics associated with this account.
+    By default, this performs a soft disconnect which:
+    - Marks the account as inactive and revoked
+    - Clears OAuth tokens for security
+    - PRESERVES all posts and analytics data
+    
+    When reconnecting the same account, all data will be restored.
+    
+    If hard_delete=True, permanently deletes the account and ALL associated
+    posts and analytics. This cannot be undone.
     """
-    from app.models.post import Post
-    from app.models.analytics import Analytics
+    from app.services.social_oauth import SocialOAuthService
     
     account = db.query(SocialAccount).filter(
         SocialAccount.id == account_id
@@ -635,25 +653,21 @@ async def disconnect_account(
     username = account.username
     
     try:
-        # Get all post IDs for this social account
-        post_ids = [p.id for p in db.query(Post.id).filter(Post.social_account_id == account_id).all()]
+        oauth_service = SocialOAuthService(db)
+        oauth_service.disconnect_account(account, hard_delete=hard_delete)
         
-        if post_ids:
-            # Delete analytics for these posts first
-            db.query(Analytics).filter(Analytics.post_id.in_(post_ids)).delete(synchronize_session=False)
-            
-            # Delete the posts
-            db.query(Post).filter(Post.social_account_id == account_id).delete(synchronize_session=False)
-        
-        # Now delete the social account
-        db.delete(account)
-        db.commit()
-        
-        logger.info(f"User {user.id} disconnected {platform} account: {username}")
-        
-        return {
-            "message": f"Disconnected {platform} account: {username}"
-        }
+        if hard_delete:
+            logger.info(f"User {user.id} permanently deleted {platform} account: {username}")
+            return {
+                "message": f"Permanently deleted {platform} account: {username}",
+                "hard_deleted": True,
+            }
+        else:
+            logger.info(f"User {user.id} disconnected {platform} account: {username} (data preserved)")
+            return {
+                "message": f"Disconnected {platform} account: {username}. Your posts and analytics are preserved and will be restored if you reconnect.",
+                "hard_deleted": False,
+            }
     except Exception as e:
         db.rollback()
         logger.exception(f"Failed to disconnect social account {account_id}: {e}")
@@ -675,7 +689,12 @@ async def refresh_account_token(
 ):
     """
     Manually refresh an account's access token.
+    
+    This will attempt to use the stored refresh token to get a new access token.
+    If the refresh token has expired or been revoked, you'll need to reconnect the account.
     """
+    from app.services.social_oauth import SocialOAuthService
+    
     account = db.query(SocialAccount).filter(
         SocialAccount.id == account_id
     ).first()
@@ -692,8 +711,38 @@ async def refresh_account_token(
             detail="Not authorized to refresh this account",
         )
     
-    # In production, you would refresh the token here
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Token refresh is not yet implemented. Please reconnect the account.",
-    )
+    if not account.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account is disconnected. Please reconnect to refresh the token.",
+        )
+    
+    if not account.refresh_token_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No refresh token available. Please reconnect the account.",
+        )
+    
+    try:
+        oauth_service = SocialOAuthService(db)
+        success = oauth_service._refresh_token(account)
+        
+        if success:
+            logger.info(f"Successfully refreshed token for account {account_id}")
+            return {
+                "message": "Token refreshed successfully",
+                "status": account.status,
+                "token_expires_at": str(account.token_expires_at) if account.token_expires_at else None,
+            }
+        else:
+            logger.warning(f"Failed to refresh token for account {account_id}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Token refresh failed. The refresh token may have expired. Please reconnect the account.",
+            )
+    except Exception as e:
+        logger.exception(f"Error refreshing token for account {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Token refresh error: {str(e)}",
+        )
