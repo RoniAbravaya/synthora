@@ -125,14 +125,6 @@ class VideoAssembler:
                 return await self._assemble_shotstack(
                     script, voice, media, video_ai, template_config, aspect_ratio
                 )
-            elif self.provider == IntegrationProvider.REMOTION:
-                return await self._assemble_remotion(
-                    script, voice, media, video_ai, template_config, aspect_ratio
-                )
-            elif self.provider == IntegrationProvider.EDITFRAME:
-                return await self._assemble_editframe(
-                    script, voice, media, video_ai, template_config, aspect_ratio
-                )
             else:
                 return StepResult(
                     success=False,

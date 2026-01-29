@@ -86,7 +86,7 @@ class VideoAIGenerator:
             # Route to appropriate provider
             if self.provider == IntegrationProvider.RUNWAY:
                 return await self._generate_runway(script, template_config)
-            elif self.provider == IntegrationProvider.SORA:
+            elif self.provider == IntegrationProvider.OPENAI_SORA:
                 return await self._generate_sora(script, template_config)
             elif self.provider == IntegrationProvider.VEO:
                 return await self._generate_veo(script, template_config)

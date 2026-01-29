@@ -103,7 +103,7 @@ class ScriptGenerator:
             StepResult with script data
         """
         try:
-            if self.provider == IntegrationProvider.OPENAI:
+            if self.provider == IntegrationProvider.OPENAI_GPT:
                 return await self._generate_openai(prompt, template_config, target_duration)
             else:
                 return StepResult(

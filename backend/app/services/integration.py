@@ -450,50 +450,50 @@ class IntegrationService:
         Returns:
             Dictionary with provider details
         """
-        # Provider display names
+        # Provider display names (using current enum values)
         display_names = {
-            IntegrationProvider.OPENAI: "OpenAI (ChatGPT)",
+            IntegrationProvider.OPENAI_GPT: "OpenAI GPT",
+            IntegrationProvider.ANTHROPIC: "Anthropic Claude",
+            IntegrationProvider.OPENAI_TTS: "OpenAI TTS",
             IntegrationProvider.ELEVENLABS: "ElevenLabs",
+            IntegrationProvider.PLAYHT: "PlayHT",
             IntegrationProvider.PEXELS: "Pexels",
             IntegrationProvider.UNSPLASH: "Unsplash",
+            IntegrationProvider.PIXABAY: "Pixabay",
+            IntegrationProvider.OPENAI_SORA: "OpenAI Sora",
             IntegrationProvider.RUNWAY: "Runway Gen-4",
-            IntegrationProvider.SORA: "OpenAI Sora",
             IntegrationProvider.VEO: "Google Veo 3",
             IntegrationProvider.LUMA: "Luma Dream Machine",
-            IntegrationProvider.IMAGINEART: "ImagineArt AI",
+            IntegrationProvider.KLING: "Kling AI",
+            IntegrationProvider.MINIMAX: "Minimax",
             IntegrationProvider.PIXVERSE: "PixVerse",
-            IntegrationProvider.SEEDANCE: "Seedance AI",
-            IntegrationProvider.WAN: "Wan2.6",
             IntegrationProvider.HAILUO: "Hailuo AI",
-            IntegrationProvider.LTX: "LTX-2",
             IntegrationProvider.FFMPEG: "FFmpeg (Local)",
             IntegrationProvider.CREATOMATE: "Creatomate",
             IntegrationProvider.SHOTSTACK: "Shotstack",
-            IntegrationProvider.REMOTION: "Remotion",
-            IntegrationProvider.EDITFRAME: "Editframe",
         }
         
-        # Documentation URLs
+        # Documentation URLs (using current enum values)
         docs_urls = {
-            IntegrationProvider.OPENAI: "https://platform.openai.com/api-keys",
+            IntegrationProvider.OPENAI_GPT: "https://platform.openai.com/api-keys",
+            IntegrationProvider.ANTHROPIC: "https://console.anthropic.com/settings/keys",
+            IntegrationProvider.OPENAI_TTS: "https://platform.openai.com/api-keys",
             IntegrationProvider.ELEVENLABS: "https://elevenlabs.io/api",
+            IntegrationProvider.PLAYHT: "https://play.ht/studio/api-access",
             IntegrationProvider.PEXELS: "https://www.pexels.com/api/",
             IntegrationProvider.UNSPLASH: "https://unsplash.com/developers",
+            IntegrationProvider.PIXABAY: "https://pixabay.com/api/docs/",
+            IntegrationProvider.OPENAI_SORA: "https://openai.com/sora",
             IntegrationProvider.RUNWAY: "https://runwayml.com/api",
-            IntegrationProvider.SORA: "https://openai.com/sora",
             IntegrationProvider.VEO: "https://cloud.google.com/video-intelligence",
             IntegrationProvider.LUMA: "https://lumalabs.ai/dream-machine",
-            IntegrationProvider.IMAGINEART: "https://www.imagine.art/api",
+            IntegrationProvider.KLING: "https://kling.kuaishou.com",
+            IntegrationProvider.MINIMAX: "https://api.minimax.chat",
             IntegrationProvider.PIXVERSE: "https://pixverse.ai",
-            IntegrationProvider.SEEDANCE: "https://seedance.ai",
-            IntegrationProvider.WAN: "https://wan.video",
             IntegrationProvider.HAILUO: "https://hailuoai.com",
-            IntegrationProvider.LTX: "https://ltx.studio",
             IntegrationProvider.FFMPEG: "https://ffmpeg.org/documentation.html",
             IntegrationProvider.CREATOMATE: "https://creatomate.com/docs",
             IntegrationProvider.SHOTSTACK: "https://shotstack.io/docs",
-            IntegrationProvider.REMOTION: "https://www.remotion.dev/docs",
-            IntegrationProvider.EDITFRAME: "https://docs.editframe.com",
         }
         
         # Auth methods

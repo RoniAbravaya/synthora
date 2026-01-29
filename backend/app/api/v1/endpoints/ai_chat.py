@@ -180,16 +180,16 @@ async def send_message(
             detail="Chat session is no longer active",
         )
     
-    # Check OpenAI integration
+    # Check OpenAI integration (GPT for text generation)
     integration_service = IntegrationService(db)
     openai_integration = integration_service.get_by_provider(
-        current_user.id, IntegrationProvider.OPENAI
+        current_user.id, IntegrationProvider.OPENAI_GPT
     )
     
     if not openai_integration:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OpenAI integration not configured. Please add your API key in Settings > Integrations.",
+            detail="OpenAI GPT integration not configured. Please add your API key in Settings > Integrations.",
         )
     
     if not openai_integration.is_active or not openai_integration.is_valid:
