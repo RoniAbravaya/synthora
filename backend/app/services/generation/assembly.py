@@ -89,6 +89,7 @@ class VideoAssembler:
         aspect_ratio: str = "9:16",
         user_id: Optional[str] = None,
         video_id: Optional[str] = None,
+        subtitle_file: Optional[str] = None,
     ) -> StepResult:
         """
         Assemble the final video.
@@ -102,6 +103,7 @@ class VideoAssembler:
             aspect_ratio: Target aspect ratio
             user_id: User ID for cloud storage organization
             video_id: Video ID for unique filenames
+            subtitle_file: Optional path to ASS subtitle file for burning
             
         Returns:
             StepResult with assembly result
@@ -111,6 +113,10 @@ class VideoAssembler:
         
         self._user_id = user_id
         self._video_id = video_id
+        self._subtitle_file = subtitle_file
+        
+        if subtitle_file:
+            logger.info(f"[ASSEMBLY] Subtitle file provided: {subtitle_file}")
         
         try:
             if self.provider == IntegrationProvider.FFMPEG:
@@ -267,16 +273,40 @@ class VideoAssembler:
                     error_details={"stderr": process.stderr[-2000:], "stdout": process.stdout[-500:]},
                 )
             
+            # Burn subtitles if available
+            final_output_path = output_path
+            if hasattr(self, '_subtitle_file') and self._subtitle_file and os.path.exists(self._subtitle_file):
+                print(f"[ASSEMBLY] Burning subtitles from: {self._subtitle_file}", flush=True)
+                logger.info(f"[ASSEMBLY] Burning subtitles from: {self._subtitle_file}")
+                
+                subtitle_output = os.path.join(temp_dir, "output_with_subtitles.mp4")
+                subtitle_result = self._burn_subtitles(
+                    ffmpeg_path,
+                    output_path,
+                    self._subtitle_file,
+                    subtitle_output,
+                )
+                
+                if subtitle_result and os.path.exists(subtitle_output):
+                    print(f"[ASSEMBLY] Subtitles burned successfully", flush=True)
+                    logger.info(f"[ASSEMBLY] Subtitles burned successfully")
+                    final_output_path = subtitle_output
+                else:
+                    print(f"[ASSEMBLY] WARNING: Subtitle burning failed, using video without subtitles", flush=True)
+                    logger.warning(f"[ASSEMBLY] Subtitle burning failed, using video without subtitles")
+            else:
+                print(f"[ASSEMBLY] No subtitle file provided or file doesn't exist", flush=True)
+            
             # Get output file info
-            file_size = os.path.getsize(output_path)
-            duration = self._get_video_duration(ffmpeg_path, output_path)
+            file_size = os.path.getsize(final_output_path)
+            duration = self._get_video_duration(ffmpeg_path, final_output_path)
             
             # Upload to cloud storage (GCS)
             storage_service = get_storage_service()
             
             if self._user_id and self._video_id:
                 video_url, is_cloud_url = storage_service.upload_video(
-                    local_path=output_path,
+                    local_path=final_output_path,
                     user_id=self._user_id,
                     video_id=self._video_id,
                 )
@@ -422,6 +452,74 @@ class VideoAssembler:
             "4:5": "1080x1350",   # Portrait (Instagram)
         }
         return resolutions.get(aspect_ratio, "1080x1920")
+    
+    def _burn_subtitles(
+        self,
+        ffmpeg_path: str,
+        input_video: str,
+        subtitle_file: str,
+        output_video: str,
+    ) -> bool:
+        """
+        Burn subtitles into the video using FFmpeg.
+        
+        Uses the ASS subtitle format for styled subtitles.
+        
+        Args:
+            ffmpeg_path: Path to FFmpeg binary
+            input_video: Path to input video
+            subtitle_file: Path to ASS subtitle file
+            output_video: Path to output video with burned subtitles
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Escape special characters in subtitle path for FFmpeg filter
+        # FFmpeg requires colons and backslashes to be escaped in filter strings
+        escaped_subtitle_path = subtitle_file.replace("\\", "/").replace(":", "\\:")
+        
+        # Build FFmpeg command for subtitle burning
+        cmd = [
+            ffmpeg_path, "-y",
+            "-i", input_video,
+            "-vf", f"ass={escaped_subtitle_path}",
+            "-c:v", "libx264",
+            "-c:a", "copy",
+            "-crf", "23",
+            "-preset", "medium",
+            output_video,
+        ]
+        
+        print(f"[ASSEMBLY] Subtitle burn command: {' '.join(cmd)}", flush=True)
+        logger.info(f"[ASSEMBLY] Burning subtitles with command: {' '.join(cmd)}")
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            
+            if result.returncode == 0 and os.path.exists(output_video):
+                print(f"[ASSEMBLY] Subtitle burn successful", flush=True)
+                return True
+            
+            # Log error details
+            stderr_lines = result.stderr.split('\n')
+            error_summary = '\n'.join(stderr_lines[-10:]) if len(stderr_lines) > 10 else result.stderr
+            print(f"[ASSEMBLY] Subtitle burn FAILED: {error_summary}", flush=True)
+            logger.error(f"[ASSEMBLY] FFmpeg subtitle burn failed: {error_summary}")
+            return False
+            
+        except subprocess.TimeoutExpired:
+            print(f"[ASSEMBLY] Subtitle burn timed out", flush=True)
+            logger.error("[ASSEMBLY] FFmpeg subtitle burn timed out")
+            return False
+        except Exception as e:
+            print(f"[ASSEMBLY] Subtitle burn error: {e}", flush=True)
+            logger.error(f"[ASSEMBLY] FFmpeg subtitle burn error: {e}")
+            return False
     
     async def _assemble_creatomate(
         self,

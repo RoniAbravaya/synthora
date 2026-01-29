@@ -22,6 +22,12 @@ from app.services.integration import IntegrationService
 
 logger = logging.getLogger(__name__)
 
+# Backwards compatibility mapping for old provider names -> new modular names
+LEGACY_PROVIDER_MAPPING = {
+    "openai": "openai_gpt",      # Old generic OpenAI -> new script-specific
+    "sora": "openai_sora",        # Old Sora -> new OpenAI Sora
+}
+
 
 @dataclass
 class PipelineConfig:
@@ -137,10 +143,16 @@ class GenerationPipeline:
             if hasattr(provider_value, 'value'):
                 provider_value = provider_value.value
             
+            # Apply legacy provider mapping for backwards compatibility
+            # This handles old database records with 'openai' -> 'openai_gpt', 'sora' -> 'openai_sora'
+            mapped_provider = LEGACY_PROVIDER_MAPPING.get(provider_value, provider_value)
+            if mapped_provider != provider_value:
+                logger.info(f"Mapped legacy provider '{provider_value}' -> '{mapped_provider}'")
+            
             # Look up category by trying enum first, then string
             category = None
             for prov, cat in PROVIDER_CATEGORIES.items():
-                if prov.value == provider_value or prov == provider_value:
+                if prov.value == mapped_provider or prov == mapped_provider:
                     category = cat
                     break
             
@@ -150,7 +162,7 @@ class GenerationPipeline:
                 result[category].append(integration)
                 logger.info(f"Loaded integration: {provider_value} -> category {category.value}")
             else:
-                logger.warning(f"Unknown provider category for: {provider_value}")
+                logger.warning(f"Unknown provider category for: {provider_value} (mapped: {mapped_provider})")
         
         logger.info(f"Integrations by category: {[c.value for c in result.keys()]}")
         return result
@@ -471,6 +483,15 @@ class GenerationPipeline:
         
         api_key = self.integration_service.get_decrypted_api_key(integration)
         
+        # Generate subtitle file if voice data is available
+        subtitle_file = None
+        try:
+            subtitle_file = self._generate_subtitle_file()
+            if subtitle_file:
+                logger.info(f"Generated subtitle file: {subtitle_file}")
+        except Exception as e:
+            logger.warning(f"Failed to generate subtitles: {e}")
+        
         assembler = VideoAssembler(api_key, integration.provider)
         result = await assembler.assemble(
             script=self.state.get("script", {}),
@@ -481,6 +502,7 @@ class GenerationPipeline:
             aspect_ratio=self.config.aspect_ratio,
             user_id=str(self.video.user_id),
             video_id=str(self.video.id),
+            subtitle_file=subtitle_file,
         )
         
         if result.success:
@@ -489,6 +511,74 @@ class GenerationPipeline:
         
         result.provider_used = integration.provider
         return result
+    
+    def _generate_subtitle_file(self) -> Optional[str]:
+        """
+        Generate a subtitle file from voice data.
+        
+        Uses timing data if available from the voice provider,
+        otherwise estimates timing from the narration text.
+        
+        Returns:
+            Path to the generated ASS subtitle file, or None if generation fails
+        """
+        import tempfile
+        import os
+        from app.services.subtitle_service import SubtitleService, TimingSegment
+        
+        voice_data = self.state.get("voice", {})
+        if not voice_data:
+            logger.info("No voice data available for subtitle generation")
+            return None
+        
+        # Get narration text
+        narration_text = voice_data.get("narration_text", "")
+        if not narration_text:
+            logger.info("No narration text available for subtitle generation")
+            return None
+        
+        # Get or estimate duration
+        estimated_duration_seconds = voice_data.get("estimated_duration", 30)
+        duration_ms = int(estimated_duration_seconds * 1000)
+        
+        # Try to get timing segments from voice data if provider supports it
+        timing_segments = SubtitleService.segments_from_voice_response(
+            voice_data, 
+            voice_data.get("provider", "")
+        )
+        
+        # If no timing data from provider, estimate from text
+        if not timing_segments:
+            logger.info("Estimating subtitle timing from text")
+            timing_segments = SubtitleService._estimate_timing_from_text(
+                narration_text,
+                duration_ms
+            )
+        
+        if not timing_segments:
+            logger.info("No timing segments could be generated")
+            return None
+        
+        # Generate ASS subtitle content
+        subtitle_service = SubtitleService(style="modern")
+        ass_content = subtitle_service.generate_ass(timing_segments)
+        
+        if not ass_content:
+            logger.info("Failed to generate ASS content")
+            return None
+        
+        # Write to temp file
+        temp_dir = tempfile.gettempdir()
+        subtitle_path = os.path.join(temp_dir, f"subtitles_{self.video.id}.ass")
+        
+        try:
+            with open(subtitle_path, "w", encoding="utf-8") as f:
+                f.write(ass_content)
+            logger.info(f"Subtitle file written to: {subtitle_path}")
+            return subtitle_path
+        except Exception as e:
+            logger.error(f"Failed to write subtitle file: {e}")
+            return None
     
     def _handle_step_failure(self, step: GenerationStep, result: StepResult) -> None:
         """Handle a step failure."""
