@@ -179,8 +179,21 @@ def main():
         print(f"Creating {len(queues)} queue(s)...", flush=True)
         queue_objects = [Queue(name, connection=redis_conn) for name in queues]
         
-        # Create and start worker
-        worker_name = f"synthora-worker-{os.getpid()}"
+        # Clean up any stale workers with our name pattern
+        # This handles cases where previous workers crashed without deregistering
+        print("Checking for stale workers...", flush=True)
+        try:
+            from rq.worker_registration import clean_worker_registry
+            for queue in queue_objects:
+                clean_worker_registry(queue)
+            print("Cleaned worker registry", flush=True)
+        except Exception as e:
+            print(f"Could not clean worker registry: {e}", flush=True)
+        
+        # Use a unique worker name with UUID to avoid conflicts
+        import uuid
+        worker_id = str(uuid.uuid4())[:8]
+        worker_name = f"synthora-{worker_id}"
         print(f"Creating worker: {worker_name}", flush=True)
         worker = Worker(
             queues=queue_objects,
