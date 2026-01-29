@@ -159,12 +159,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         style_parts = [
             "Default",                          # Name
             config.get("font_name", "Arial"),   # Fontname
-            str(config.get("font_size", 24)),   # Fontsize
+            str(config.get("font_size", 48)),   # Fontsize (larger default for vertical video)
             primary_color,                       # PrimaryColour
             "&H000000FF",                        # SecondaryColour
             outline_color or "&H000000",        # OutlineColour
             back_color,                          # BackColour
-            "0",                                 # Bold
+            str(config.get("bold", 0)),         # Bold (support bold text)
             "0",                                 # Italic
             "0",                                 # Underline
             "0",                                 # StrikeOut
@@ -173,12 +173,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             "0",                                 # Spacing
             "0",                                 # Angle
             str(border_style),                   # BorderStyle
-            str(config.get("outline_width", 2)),# Outline
+            str(config.get("outline_width", 3)),# Outline (thicker default)
             str(config.get("shadow", 0)),        # Shadow
             str(config.get("alignment", 2)),     # Alignment
-            "10",                                # MarginL
-            "10",                                # MarginR
-            str(config.get("margin_v", 30)),     # MarginV
+            "30",                                # MarginL (wider margins)
+            "30",                                # MarginR
+            str(config.get("margin_v", 100)),    # MarginV (higher for vertical video)
             "1",                                 # Encoding
         ]
         

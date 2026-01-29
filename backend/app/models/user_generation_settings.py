@@ -37,49 +37,52 @@ class SubtitleStyle:
 
 
 # Subtitle style configurations for FFmpeg
+# Font sizes are optimized for vertical (9:16) videos at 1920p
+# Using universally available fonts that work on Linux servers
 SUBTITLE_STYLE_CONFIGS = {
     SubtitleStyle.CLASSIC: {
         "font_name": "Arial",
-        "font_size": 24,
+        "font_size": 48,  # Larger for 1920p vertical video
         "primary_color": "&HFFFFFF",  # White (ASS format: &HBBGGRR)
         "outline_color": "&H000000",  # Black
-        "outline_width": 2,
-        "shadow": 1,
+        "outline_width": 3,
+        "shadow": 2,
         "alignment": 2,  # Bottom center
-        "margin_v": 30,
+        "margin_v": 100,  # Higher margin for vertical videos
         "background_color": None,
     },
     SubtitleStyle.MODERN: {
-        "font_name": "Helvetica Neue",
-        "font_size": 28,
+        "font_name": "Arial",  # Changed from Helvetica Neue (not always available)
+        "font_size": 52,  # Larger for readability on vertical video
         "primary_color": "&HFFFFFF",
         "outline_color": "&H000000",
-        "outline_width": 1,
+        "outline_width": 2,
         "shadow": 0,
         "alignment": 2,
-        "margin_v": 40,
+        "margin_v": 120,  # Good margin from bottom for vertical
         "background_color": "&H80000000",  # Semi-transparent black
     },
     SubtitleStyle.BOLD: {
-        "font_name": "Impact",
-        "font_size": 32,
+        "font_name": "Arial",  # Changed from Impact (may not be available)
+        "font_size": 58,  # Large and bold for impact
         "primary_color": "&H00FFFF",  # Yellow (BGR format)
         "outline_color": "&H000000",
-        "outline_width": 3,
-        "shadow": 2,
-        "alignment": 5,  # Center
+        "outline_width": 4,
+        "shadow": 3,
+        "alignment": 5,  # Center of screen
         "margin_v": 0,
         "background_color": None,
+        "bold": 1,  # Make text bold
     },
     SubtitleStyle.MINIMAL: {
-        "font_name": "Roboto",
-        "font_size": 22,
+        "font_name": "DejaVu Sans",  # Changed from Roboto (may not be available)
+        "font_size": 44,
         "primary_color": "&HFFFFFF",
         "outline_color": None,
         "outline_width": 0,
         "shadow": 0,
         "alignment": 2,
-        "margin_v": 25,
+        "margin_v": 80,
         "background_color": "&HB0000000",  # More opaque black
     },
 }

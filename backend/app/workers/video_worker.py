@@ -19,6 +19,7 @@ from app.core.database import SessionLocal
 from app.core.logging_config import VideoGenerationLogger
 from app.services.video import VideoService
 from app.services.template import TemplateService
+from app.services.user_generation_settings import UserGenerationSettingsService
 from app.services.generation.pipeline import GenerationPipeline, PipelineConfig
 from app.models.video import Video, VideoStatus
 from app.models.job import Job, JobStatus
@@ -97,15 +98,34 @@ def process_video_generation(
             else:
                 vlog.warning(f"Template {template_id} not found, proceeding without template")
         
-        # Build pipeline config
+        # Load user generation settings for preferred providers
+        settings_service = UserGenerationSettingsService(db)
+        user_settings = settings_service.get_settings(UUID(user_id))
+        
+        # Log user preferences
+        vlog.progress("init", 12, "Loading user generation settings")
+        if user_settings:
+            logger.info(f"User preferred providers: script={user_settings.default_script_provider}, "
+                       f"voice={user_settings.default_voice_provider}, "
+                       f"media={user_settings.default_media_provider}, "
+                       f"video_ai={user_settings.default_video_ai_provider}, "
+                       f"assembly={user_settings.default_assembly_provider}")
+        
+        # Build pipeline config with user preferences
         pipeline_config = PipelineConfig(
             prompt=prompt,
             template_config=template_config,
             target_duration=template_config.get("video_structure", {}).get("duration_max", 30),
             aspect_ratio=template_config.get("visual_style", {}).get("aspect_ratio", "9:16"),
+            # Apply user's preferred providers from settings
+            preferred_script_provider=user_settings.default_script_provider if user_settings else None,
+            preferred_voice_provider=user_settings.default_voice_provider if user_settings else None,
+            preferred_media_provider=user_settings.default_media_provider if user_settings else None,
+            preferred_video_ai_provider=user_settings.default_video_ai_provider if user_settings else None,
+            preferred_assembly_provider=user_settings.default_assembly_provider if user_settings else None,
         )
         
-        # Apply overrides
+        # Apply overrides (from video creation request, takes precedence over user settings)
         if config_overrides:
             for key, value in config_overrides.items():
                 if hasattr(pipeline_config, key):
